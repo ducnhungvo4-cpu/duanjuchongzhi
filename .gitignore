@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+
+# runtime output
+dist/
+build/
+.cache/
+.vite/
+
+# local env
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# generated / temporary files
+tmp/
+temp/
+__pycache__/
+*.pyc
+
+# document exports and validation captures
+*.docx
+*.pdf
+preview-*.png
+verify-*.png
+screenshots/
+wireframes/
+feishu/
+feishu-output/
+feishu-v*/
+archive/
+
+# personal tool config
+.claude/

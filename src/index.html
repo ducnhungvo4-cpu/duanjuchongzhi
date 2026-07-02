@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>视频重制工坊原型</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body data-screen="home">
+  <header class="app-top">
+    <div class="project">
+      <button class="back-btn">‹</button>
+      <div class="home-brand">视频重制工坊</div>
+      <div class="project-copy">
+        <div class="project-title">六年后再遇首富前男友 <span>✎</span></div>
+        <div class="project-meta">9:16　｜　480p　｜　写实通用　｜　目标语言：英语</div>
+      </div>
+    </div>
+    <nav class="steps">
+      <button class="step active" data-screen="home"><span>▻</span>原片</button>
+      <button class="step" data-screen="assets"><span>▣</span>设定</button>
+      <button class="step" data-screen="segments"><span>▦</span>分镜</button>
+      <button class="step" data-screen="compare"><span>⌁</span>视频</button>
+    </nav>
+    <div class="top-actions">
+      <button class="ghost">导出</button>
+      <button class="coin">✦ 21,198,363</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="screen active home-screen" id="home">
+      <div class="upload-card">
+        <div class="upload-tabs" id="source-tabs">
+          <button class="active" data-source-mode="local">上传本地视频</button>
+          <button data-source-mode="backend">拉取后台视频项目</button>
+        </div>
+        <section class="source-empty" id="source-empty-state">
+          <div class="drop-icon">▣</div>
+          <b>上传本地视频</b>
+          <span>可上传整部短剧文件夹，也可先上传单个视频。确认素材后再开始上传。</span>
+          <div class="empty-actions">
+            <button class="primary" id="pick-local-source">上传文件夹</button>
+            <button class="ghost" id="pick-single-video-source">上传单个视频</button>
+          </div>
+        </section>
+        <section class="source-empty" id="backend-source-state" hidden>
+          <div class="drop-icon">▣</div>
+          <b>拉取后台视频项目</b>
+          <span>从公司视频管理系统选择待重制项目。确认项目后再开始上传。</span>
+          <div class="empty-actions">
+            <button class="primary" data-open-modal="backend-project-modal">选择后台项目</button>
+          </div>
+        </section>
+        <section class="selected-source" id="selected-source-state" hidden>
+          <div>
+            <span id="selected-source-label">本地视频</span>
+            <b id="selected-source-title">六年后再遇首富前男友</b>
+            <small id="selected-source-meta">本地文件夹 · 40 集 · 40 个视频文件</small>
+          </div>
+        </section>
+        <div class="dropzone upload-done" id="upload-dropzone" hidden>
+          <div class="drop-icon">▣</div>
+          <div id="upload-drop-title">正在上传《六年后再遇首富前男友》原片文件夹</div>
+          <small id="upload-drop-subtitle">上传完成后再选择分析方式</small>
+        </div>
+        <section class="upload-list-panel" id="upload-list-panel" hidden>
+          <div class="upload-list-head">
+            <b>视频上传进度</b>
+            <span id="upload-list-count">全部 40　已上传 0　上传中 0　失败 0</span>
+          </div>
+          <table>
+            <thead>
+              <tr><th>剧集信息</th><th>时长</th><th>大小</th><th>上传状态</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>第 1 集</b><span>001.mp4</span></td><td>01:22</td><td>10.62 MB</td><td><i class="dot blue" data-upload-dot="1"></i><span data-upload-row="1">等待上传</span></td><td data-upload-actions="1"><a>暂停</a></td></tr>
+              <tr><td><b>第 2 集</b><span>002.mp4</span></td><td>02:06</td><td>19.98 MB</td><td><i class="dot blue" data-upload-dot="2"></i><span data-upload-row="2">等待上传</span></td><td data-upload-actions="2"><a>暂停</a></td></tr>
+              <tr><td><b>第 3 集</b><span>003.mp4</span></td><td>01:52</td><td>15.65 MB</td><td><i class="dot blue" data-upload-dot="3"></i><span data-upload-row="3">等待上传</span></td><td data-upload-actions="3"><a>暂停</a></td></tr>
+              <tr><td><b>第 4 集</b><span>004.mp4</span></td><td>01:53</td><td>14.71 MB</td><td><i class="dot blue" data-upload-dot="4"></i><span data-upload-row="4">等待上传</span></td><td data-upload-actions="4"><a>暂停</a></td></tr>
+              <tr><td><b>第 5 集</b><span>005.mp4</span></td><td>01:45</td><td>15.41 MB</td><td><i class="dot blue" data-upload-dot="5"></i><span data-upload-row="5">等待上传</span></td><td data-upload-actions="5"><a>暂停</a></td></tr>
+            </tbody>
+          </table>
+        </section>
+        <section class="source-summary" id="source-summary" hidden>
+          <article><span>文件夹名称</span><b>六年后再遇首富前男友</b></article>
+          <article><span>总集数</span><b>40 集</b></article>
+          <article><span>上传状态</span><b>40/40 已完成</b></article>
+        </section>
+        <section class="analysis-choice" id="analysis-choice" hidden>
+          <div>
+            <b>选择分析方式</b>
+            <span id="analysis-choice-tip">本地上传视频走普通视频分析。</span>
+          </div>
+          <div class="analysis-actions">
+            <button class="primary" id="home-normal-analysis" data-run-analysis="normal">普通分析</button>
+            <button class="ghost disabled" id="home-aigc-analysis" data-run-analysis="aigc">关联 AIGC 资产并分析</button>
+          </div>
+        </section>
+        <div class="config-row" id="home-config-row">
+          <label class="select-field">目标国家<select id="target-country-select"><option>美国</option><option>英国</option><option>日本</option><option>韩国</option></select></label>
+          <div class="spacer"></div>
+          <details class="param-sheet">
+            <summary>生成参数 <b id="param-summary">16:9 · 720p · 写实通用</b></summary>
+            <div class="param-popover">
+              <div class="param-row">
+                <span>画幅</span>
+                <div class="param-options"><button class="active">16:9</button><button>9:16</button><button>1:1</button></div>
+              </div>
+              <div class="param-row">
+                <span>清晰度</span>
+                <div class="param-options"><button>480p</button><button class="active">720p</button><button>1080p</button></div>
+              </div>
+              <div class="param-row">
+                <span>风格</span>
+                <div class="param-options"><button class="active">写实通用</button><button>欧美短剧</button><button>广告质感</button></div>
+              </div>
+            </div>
+          </details>
+          <button class="create-btn in-card disabled" id="footer-upload-action">开始上传</button>
+        </div>
+      </div>
+      <section class="project-library" id="project-library">
+        <div class="library-head">
+          <div>
+            <h2>项目管理</h2>
+            <span>过往重绘项目</span>
+          </div>
+          <div class="library-actions">
+            <button class="ghost">全部项目</button>
+            <button class="ghost">最近更新</button>
+          </div>
+        </div>
+        <div class="project-grid">
+          <article class="project-card" data-next="source">
+            <div class="project-cover cover-a"></div>
+            <div class="project-info">
+              <span>原片处理中</span>
+              <b>六年后再遇首富前男友</b>
+              <small>出海短剧组 · 40 集 · 38/40 已解析 · 2 集失败</small>
+            </div>
+          </article>
+          <article class="project-card" data-next="assets">
+            <div class="project-cover cover-b"></div>
+            <div class="project-info">
+              <span>待设定</span>
+              <b>离婚后再遇富豪系统</b>
+              <small>AIGC 重制组 · 32 集 · 32/32 已解析</small>
+            </div>
+          </article>
+          <article class="project-card" data-next="source">
+            <div class="project-cover cover-c"></div>
+            <div class="project-info">
+              <span>解析失败</span>
+              <b>替嫁千金的复仇剧本</b>
+              <small>短剧本地化组 · 24 集 · 21/24 已解析 · 3 集失败</small>
+            </div>
+          </article>
+          <article class="project-card" data-next="assets">
+            <div class="project-cover cover-d"></div>
+            <div class="project-info">
+              <span>分镜中</span>
+              <b>总裁的秘密契约</b>
+              <small>海外投放组 · 18 集 · 126/140 分镜已采用</small>
+            </div>
+          </article>
+        </div>
+      </section>
+    </section>
+
+    <section class="screen page-screen analysis-screen" id="analysis">
+      <div class="analysis-loading-card">
+        <div class="loader-ring"></div>
+        <h1>正在分析视频资源</h1>
+        <p id="analysis-mode-copy">系统正在执行普通视频分析，请保持页面打开。</p>
+        <div class="analysis-progress-list">
+          <article>
+            <div class="analysis-head"><b>剧情解析转化进度</b><span id="story-progress-label">0%</span></div>
+            <div class="progress"><i id="story-progress-bar" style="width: 0%"></i></div>
+            <small>识别剧情段落、台词、镜头节奏，并转化为目标国家分镜基础描述。</small>
+          </article>
+          <article>
+            <div class="analysis-head"><b>资产解析转化进度</b><span id="asset-progress-label">0%</span></div>
+            <div class="progress"><i id="asset-progress-bar" style="width: 0%"></i></div>
+            <small id="asset-progress-copy">通过视频抽帧、视觉理解和 OCR 分析角色、场景、道具与画面文字。</small>
+          </article>
+        </div>
+        <button class="primary disabled" id="analysis-complete-action" data-next="assets">进入设定</button>
+      </div>
+    </section>
+
+    <section class="screen page-screen" id="source">
+      <div class="info-bar" id="source-upload-info">正在上传原片视频。上传完成后，再选择分析方式进入独立分析页面。</div>
+      <div class="page-head">
+        <h1>原片剧集</h1>
+        <div id="source-upload-count">全部 40　已上传 0　上传中 0　失败 0</div>
+      </div>
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr><th>剧集信息</th><th>时长</th><th>大小</th><th>状态</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><b>第 1 集</b><span>001.mp4</span></td><td>01:22</td><td>10.62 MB</td><td><i class="dot blue" data-source-upload-dot="1"></i><span data-source-upload-row="1">等待上传</span></td><td data-source-upload-actions="1"><a>暂停</a></td></tr>
+            <tr><td><b>第 2 集</b><span>002.mp4</span></td><td>02:06</td><td>19.98 MB</td><td><i class="dot blue" data-source-upload-dot="2"></i><span data-source-upload-row="2">等待上传</span></td><td data-source-upload-actions="2"><a>暂停</a></td></tr>
+            <tr><td><b>第 3 集</b><span>003.mp4</span></td><td>01:52</td><td>15.65 MB</td><td><i class="dot blue" data-source-upload-dot="3"></i><span data-source-upload-row="3">等待上传</span></td><td data-source-upload-actions="3"><a>暂停</a></td></tr>
+            <tr><td><b>第 4 集</b><span>004.mp4</span></td><td>01:53</td><td>14.71 MB</td><td><i class="dot blue" data-source-upload-dot="4"></i><span data-source-upload-row="4">等待上传</span></td><td data-source-upload-actions="4"><a>暂停</a></td></tr>
+            <tr><td><b>第 5 集</b><span>005.mp4</span></td><td>01:45</td><td>15.41 MB</td><td><i class="dot blue" data-source-upload-dot="5"></i><span data-source-upload-row="5">等待上传</span></td><td data-source-upload-actions="5"><a>暂停</a></td></tr>
+            <tr><td><b>第 6 集</b><span>006.mp4</span></td><td>01:35</td><td>14.93 MB</td><td><i class="dot blue" data-source-upload-dot="6"></i><span data-source-upload-row="6">等待上传</span></td><td data-source-upload-actions="6"><a>暂停</a></td></tr>
+            <tr><td><b>第 7 集</b><span>007.mp4</span></td><td>02:04</td><td>16.15 MB</td><td><i class="dot blue" data-source-upload-dot="7"></i><span data-source-upload-row="7">等待上传</span></td><td data-source-upload-actions="7"><a>暂停</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <section class="analysis-choice source-analysis-choice" id="source-analysis-choice" hidden>
+        <div>
+          <b>选择分析方式</b>
+          <span id="source-analysis-choice-tip">上传完成后可选择分析方式。</span>
+        </div>
+        <div class="analysis-actions">
+          <button class="primary" id="source-normal-analysis" data-run-analysis="normal">普通分析</button>
+          <button class="ghost disabled" id="source-aigc-analysis" data-run-analysis="aigc">关联 AIGC 资产并分析</button>
+        </div>
+      </section>
+      <div class="locked-rule">当前只展示上传状态。分析状态会在点击分析方式后进入独立 loading 页面展示。</div>
+      <div class="footer-actions">
+        <button class="ghost" data-next="home">返回</button>
+      </div>
+    </section>
+
+    <section class="screen page-screen" id="assets">
+      <div class="page-head">
+        <h1>设定</h1>
+        <div>角色 4 / 子资产 11　场景 9 / 子资产 18　道具 5</div>
+      </div>
+      <div class="module-tabs">
+        <button class="active" data-subpage="asset-role-overview">角色</button>
+        <button data-subpage="asset-scene-overview">场景</button>
+        <button data-subpage="asset-prop-overview">道具</button>
+        <button data-subpage="asset-batch">批量送审</button>
+      </div>
+      <div class="asset-overview sub-panel active" id="asset-role-overview">
+        <div class="overview-head"><h2>角色资产占位符</h2><div><button class="ghost">+ 添加角色占位符</button><button class="ghost">批量生成图片</button></div></div>
+        <div class="asset-grid overview-grid">
+          <article class="asset-card" data-subpage="asset-role-detail"><i>待补齐</i><div class="asset-card-visuals"><figure><div class="thumb face-a"></div><em>原</em><figcaption>张三</figcaption></figure><figure><div class="thumb face-b"></div><em>新</em><figcaption>John Carter</figcaption></figure></div><b>张三 → John Carter</b><span>3 个子资产：普通状态、西装状态、受伤状态；2 个已生成待送审</span></article>
+          <article class="asset-card"><i>审核通过</i><div class="asset-card-visuals"><figure><div class="thumb face-b"></div><em>原</em><figcaption>母亲</figcaption></figure><figure><div class="thumb face-c"></div><em>新</em><figcaption>Martha Hill</figcaption></figure></div><b>母亲 → Martha Hill</b><span>2 个子资产全部通过</span></article>
+          <article class="asset-card"><i>审核中</i><div class="asset-card-visuals"><figure><div class="thumb face-c"></div><em>原</em><figcaption>女主</figcaption></figure><figure><div class="thumb face-a"></div><em>新</em><figcaption>Evelyn Hayes</figcaption></figure></div><b>女主 → Evelyn Hayes</b><span>3 个子资产审核中</span></article>
+          <article class="asset-card"><i>部分驳回</i><div class="asset-card-visuals"><figure><div class="thumb face-a"></div><em>原</em><figcaption>男主</figcaption></figure><figure><div class="thumb face-c"></div><em>新</em><figcaption>Alexander Sterling</figcaption></figure></div><b>男主 → Alexander Sterling</b><span>战斗服状态被驳回，需重生成</span></article>
+        </div>
+      </div>
+      <div class="asset-overview sub-panel" id="asset-scene-overview">
+        <div class="overview-head"><h2>场景资产占位符</h2><div><button class="ghost">+ 添加场景占位符</button><button class="ghost">批量生成图片</button></div></div>
+        <div class="asset-grid overview-grid">
+          <article class="asset-card" data-subpage="asset-scene-detail"><i>已生成待送审</i><div class="asset-card-visuals"><figure><div class="thumb scene"></div><em>原</em><figcaption>县城街道</figcaption></figure><figure><div class="thumb scene remake"></div><em>新</em><figcaption>Western Small Town Street</figcaption></figure></div><b>县城街道 → Western Small Town Street</b><span>2 个子资产：日景、夜景</span></article>
+          <article class="asset-card"><i>审核通过</i><div class="asset-card-visuals"><figure><div class="thumb scene"></div><em>原</em><figcaption>家庭客厅</figcaption></figure><figure><div class="thumb scene remake"></div><em>新</em><figcaption>Western Living Room</figcaption></figure></div><b>家庭客厅 → Western Living Room</b><span>普通状态已通过</span></article>
+          <article class="asset-card"><i>待生成</i><div class="asset-card-visuals"><figure><div class="thumb scene"></div><em>原</em><figcaption>卧室</figcaption></figure><figure><div class="asset-placeholder compact">待生成</div><em>新</em><figcaption>Bedroom</figcaption></figure></div><b>卧室 → Bedroom</b><span>夜景缺目标资产图</span></article>
+          <article class="asset-card" data-subpage="asset-scene-text-detail"><i>审核中</i><div class="asset-card-visuals"><figure><div class="thumb text"></div><em>原</em><figcaption>店招</figcaption></figure><figure><div class="thumb text remake"></div><em>新</em><figcaption>Wang's Corner Store</figcaption></figure></div><b>店招 → Wang's Corner Store</b><span>场景文字并入场景资产</span></article>
+          <article class="asset-card"><i>已生成待送审</i><div class="asset-card-visuals"><figure><div class="thumb text"></div><em>原</em><figcaption>聊天界面</figcaption></figure><figure><div class="thumb text remake"></div><em>新</em><figcaption>Phone Chat</figcaption></figure></div><b>聊天界面 → Phone Chat</b><span>英文气泡界面</span></article>
+          <article class="asset-card"><i>待补齐</i><div class="asset-card-visuals"><figure><div class="thumb text"></div><em>原</em><figcaption>墙面标语</figcaption></figure><figure><div class="asset-placeholder compact">待补图</div><em>新</em><figcaption>Work Hard</figcaption></figure></div><b>墙面标语 → Work Hard</b><span>仅文字占位，待补图</span></article>
+        </div>
+      </div>
+      <div class="asset-overview sub-panel" id="asset-prop-overview">
+        <div class="overview-head"><h2>道具资产占位符</h2><div><button class="ghost">+ 添加道具占位符</button><button class="ghost">批量生成图片</button></div></div>
+        <div class="asset-grid overview-grid">
+          <article class="asset-card" data-subpage="asset-prop-detail"><i>已生成待送审</i><div class="asset-card-visuals"><figure><div class="thumb prop"></div><em>原</em><figcaption>中文合同</figcaption></figure><figure><div class="thumb prop remake"></div><em>新</em><figcaption>Employment Agreement</figcaption></figure></div><b>中文合同 → Employment Agreement</b><span>A4 英文合同</span></article>
+          <article class="asset-card"><i>审核通过</i><div class="asset-card-visuals"><figure><div class="thumb prop"></div><em>原</em><figcaption>塑料袋</figcaption></figure><figure><div class="thumb prop remake"></div><em>新</em><figcaption>Grocery Bag</figcaption></figure></div><b>塑料袋 → Grocery Bag</b><span>白色纸质购物袋</span></article>
+          <article class="asset-card"><i>待生成</i><div class="asset-card-visuals"><figure><div class="thumb prop"></div><em>原</em><figcaption>旧木凳</figcaption></figure><figure><div class="asset-placeholder compact">待生成</div><em>新</em><figcaption>Porch Chair</figcaption></figure></div><b>旧木凳 → Porch Chair</b><span>文字占位，待补图</span></article>
+        </div>
+      </div>
+      <div class="asset-detail sub-panel" id="asset-role-detail">
+        <div class="detail-topbar"><button class="ghost" data-subpage="asset-role-overview">返回角色概览</button><h2>张三 → John Carter</h2><button class="primary">送审已生成图片</button></div>
+        <div class="generation-layout">
+          <section class="asset-source-panel">
+            <div class="panel-title">子资产候选</div>
+            <div class="subasset-list">
+              <article class="subasset-card active"><div class="subasset-thumb-shell"><div class="thumb face-a"></div><div class="subasset-inline-actions"><button>删除子资产</button><button>设为主资产</button></div></div><b>普通状态</b><span>主资产候选 · 已生成待送审</span></article>
+              <article class="subasset-card"><div class="thumb face-b"></div><b>西装状态</b><span>已生成待送审</span></article>
+              <article class="subasset-card empty"><div class="asset-placeholder">待补图</div><b>受伤状态</b><span>文字占位，未生成图</span></article>
+            </div>
+            <div class="asset-compare">
+              <article><div class="thumb face-a"></div><b>原资产图</b><span>来自第 8 集 00:42</span></article>
+              <article><div class="asset-placeholder">目标资产图</div><b>美国版普通状态</b><span>生成后可送审</span></article>
+            </div>
+            <label>原资产描述<textarea readonly>张三，25-30 岁，短发，普通深色外套，表情紧张，出现在城市街边冲突场景。</textarea></label>
+            <label>目标国家资产描述<textarea>John Carter, a 28-year-old American man with short dark hair, wearing a simple dark jacket, tense expression, grounded urban drama style.</textarea></label>
+          </section>
+          <aside class="generation-panel asset-generation-studio">
+            <div class="studio-toolbar">
+              <div class="studio-title"><b>John Carter</b><button>编辑</button></div>
+              <button class="studio-add">+ 添加变体</button>
+              <div class="studio-icon-actions"><button title="收藏">☆</button><button title="下载">↓</button><button title="删除">删</button></div>
+              <button class="primary studio-confirm">确认角色</button>
+            </div>
+            <div class="studio-preview-row">
+              <div class="studio-preview-main">
+                <div class="studio-portrait face-a"></div>
+                <div class="studio-turnaround face-b"></div>
+              </div>
+              <div class="studio-current">
+                <span>当前</span>
+                <div class="studio-current-thumb"><i></i><i></i></div>
+              </div>
+            </div>
+            <div class="agent-generate-card">
+              <div class="agent-card-head">
+                <h3>Agent 生成形象</h3>
+                <div><button>从角色库选择</button><button>本地上传</button></div>
+              </div>
+              <div class="agent-prompt-box">
+                <button class="add-reference">+</button>
+                <p>任务：完成角色的上半身正面平视特写和该角色的全身三视图，左边是角色的上半身正面平视特写，右边是该角色的全身三视图。三视图不可以有分割线，比例是 16:9，左侧为角色胸部以上特写大图，占画面约 40% 宽度，用于展示面部、发型、表情、眼神、上半身服装和配饰细节，右侧为同一角色的三视图，占画面约 60% 宽度，依次展示正面全身、侧面全身、背面全身。</p>
+                <div class="agent-prompt-footer">
+                  <div class="agent-selects"><button>Doubao-Seedream-5.0-lite</button><button>1张</button></div>
+                  <button class="primary agent-cost">44</button>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <div class="asset-detail sub-panel" id="asset-scene-detail">
+        <div class="detail-topbar"><button class="ghost" data-subpage="asset-scene-overview">返回场景概览</button><h2>县城街道 → Western Small Town Street</h2><button class="primary">确认场景</button></div>
+        <div class="generation-layout">
+          <section class="asset-source-panel"><div class="panel-title">原资产与重绘占位</div><div class="asset-compare"><article><div class="thumb scene"></div><b>原场景图</b><span>原片关键帧</span></article><article><div class="asset-placeholder scene">新场景占位</div><b>重绘后场景</b><span>生成后替换占位</span></article></div><label>原资产提示词<textarea readonly>中国县城街道，低矮商铺，旧车辆，生活化街景，整体压抑朴素。</textarea></label></section>
+          <aside class="generation-panel"><h3>Agent 生成场景</h3><label>重绘提示词<textarea>生成现代欧美小镇街道，低矮商铺、英文店招、旧皮卡、玻璃橱窗，保留原片生活化压抑感。</textarea></label><div class="param-grid"><label>模型<select><option>Doubao-Seedream-5.0-lite</option></select></label><label>张数<select><option>1张</option></select></label><label>比例<select><option>16:9</option></select></label><label>质量<select><option>标准</option></select></label></div><button class="primary full">生成新场景</button></aside>
+        </div>
+      </div>
+      <div class="asset-detail sub-panel" id="asset-prop-detail">
+        <div class="detail-topbar"><button class="ghost" data-subpage="asset-prop-overview">返回道具概览</button><h2>中文合同 → Employment Agreement</h2><button class="primary">确认道具</button></div>
+        <div class="generation-layout">
+          <section class="asset-source-panel"><div class="panel-title">原资产与重绘占位</div><div class="asset-compare"><article><div class="thumb prop"></div><b>原道具图</b><span>原片截图</span></article><article><div class="asset-placeholder prop">新道具占位</div><b>重绘后道具</b><span>生成后替换占位</span></article></div><label>原资产提示词<textarea readonly>中文合同文件，A4 纸张，出现在人物手中，需要替换为英文合同。</textarea></label></section>
+          <aside class="generation-panel"><h3>Agent 生成道具</h3><label>重绘提示词<textarea>生成白色 A4 英文合同文件，标题显示 Employment Agreement，纸张边角整齐，适合作为短剧近景道具。</textarea></label><div class="param-grid"><label>模型<select><option>Doubao-Seedream-5.0-lite</option></select></label><label>张数<select><option>1张</option></select></label><label>比例<select><option>1:1</option></select></label><label>质量<select><option>标准</option></select></label></div><button class="primary full">生成新道具</button></aside>
+        </div>
+      </div>
+      <div class="asset-detail sub-panel" id="asset-scene-text-detail">
+        <div class="detail-topbar"><button class="ghost" data-subpage="asset-scene-overview">返回场景概览</button><h2>店招 → Wang's Corner Store</h2><button class="primary">确认场景文字</button></div>
+        <div class="generation-layout">
+          <section class="asset-source-panel"><div class="panel-title">原资产与重绘占位</div><div class="asset-compare"><article><div class="thumb text"></div><b>原场景文字图</b><span>中文店招</span></article><article><div class="asset-placeholder text">新文字占位</div><b>重绘后场景文字</b><span>生成后替换占位</span></article></div><label>原资产提示词<textarea readonly>中文街边店招，白底深色字，位于街边小店门头，需要本地化为英文。</textarea></label></section>
+          <aside class="generation-panel"><h3>Agent 生成场景文字</h3><label>重绘提示词<textarea>生成英文店招 Wang's Corner Store，白底深色字，位于街边小店门头，字体清晰可读。</textarea></label><div class="param-grid"><label>模型<select><option>Doubao-Seedream-5.0-lite</option></select></label><label>张数<select><option>1张</option></select></label><label>比例<select><option>16:9</option></select></label><label>质量<select><option>标准</option></select></label></div><button class="primary full">生成新场景文字</button></aside>
+        </div>
+      </div>
+      <div class="sub-panel simple-panel" id="asset-batch">
+        <div class="metric"><b>待生成</b><span>4 个子资产</span></div>
+        <div class="metric"><b>已生成待送审</b><span>9 个子资产</span></div>
+        <div class="metric"><b>审核中</b><span>6 个子资产</span></div>
+        <div class="metric"><b>审核驳回</b><span>1 个子资产</span></div>
+        <div class="review-rule">未生成目标资产图的子资产不能送审；全部资产审核通过后才允许进入分镜。</div>
+      </div>
+      <div class="footer-actions">
+        <button class="ghost" data-next="source">返回</button>
+        <button class="primary disabled">进入分镜</button>
+      </div>
+    </section>
+
+    <section class="screen workbench" id="segments">
+        <section class="asset-sidebar">
+          <details class="episode-select">
+            <summary><b>第 1 集 久别重逢</b><span>40 集已解析</span></summary>
+            <div class="episode-menu">
+              <button class="active">第 1 集 久别重逢</button>
+              <button>第 2 集 重回旧宅</button>
+              <button>第 3 集 深夜争执</button>
+              <button>第 4 集 合同曝光</button>
+              <button>第 5 集 雨夜追问</button>
+              <button>第 6 集 家族晚宴</button>
+              <button>第 7 集 误会升级</button>
+              <button>第 8 集 真相浮现</button>
+            </div>
+          </details>
+          <div class="inner-tabs compact-asset-tabs"><button class="active" data-sidepanel="shot-asset-overview">全部</button><button>角色</button><button>场景</button><button>道具</button><button data-sidepanel="shot-frame">参考帧</button></div>
+          <div class="asset-panel active" id="shot-asset-overview">
+            <h3>参考帧 <button data-sidepanel="shot-frame">查看</button></h3>
+            <div class="frame-card" data-sidepanel="shot-frame">
+              <div class="frame-card-grid"><span></span><span></span><span></span><span></span></div>
+              <b>已选 4 帧</b>
+              <span>用于控制构图与站位</span>
+            </div>
+            <h3>角色 <button>+</button></h3>
+            <div class="ref-card"><div class="mini-img face-b"></div><b>@EvelynHayes-Home</b><span>审核通过</span></div>
+            <div class="ref-card"><div class="mini-img face-a"></div><b>@JohnCarter-Suit</b><span>审核通过</span></div>
+            <h3>场景 <button>+</button></h3>
+            <div class="scene-card"><div class="scene-shot"></div><b>@Bedroom-Night</b><span>审核通过</span></div>
+          </div>
+          <div class="asset-panel frame-side-panel" id="shot-frame">
+            <h3>选择原视频帧 <button data-sidepanel="shot-asset-overview">返回</button></h3>
+            <div class="side-frame-picker"><div class="active"></div><div></div><div></div><div></div></div>
+            <h3>合成参考帧</h3>
+            <div class="side-composite"><span></span><span></span><span></span><span></span></div>
+            <p>选中的关键帧用于控制构图、人物站位和画面细节。</p>
+            <button class="dark-btn full">添加为参考帧</button>
+            <button class="primary full">26</button>
+          </div>
+      </section>
+      <section class="shot-main">
+        <div class="shot-head"><h2>分镜 01 <span>00:00-00:08</span></h2><div class="shot-actions"><button class="primary small">生成视频</button></div></div>
+          <div class="shot-text sub-panel active" id="shot-prompt">
+            <div class="prompt-body">
+              <div class="tool-row"><button>+</button><button>引用</button><span>系统已把审核通过的资产引用写入提示词，用户可直接编辑。</span></div>
+              <p><b>原片时间段：</b>00:00-00:08</p>
+              <p><b>引用资产：</b>@JohnCarter-Suit、@EvelynHayes-Home、@Bedroom-Night、@EmploymentAgreement</p>
+              <p><b>分镜提示词草稿：</b>拍摄一段美国都市短剧片段。@JohnCarter-Suit 站在 @Bedroom-Night 门口，低声质问 @EvelynHayes-Home，镜头中景平拍，人物距离逐渐拉近，桌面露出 @EmploymentAgreement。保留原片紧张压迫感，避免中文文字、亚洲店招和不一致服装。</p>
+            </div>
+            <div class="controls"><button>Doubao-Seedance</button><button>8s</button><button>1x</button></div>
+          </div>
+          <div class="sub-panel simple-panel" id="shot-assets"><span class="chip">@AlexanderSterling</span><span class="chip">@EvelynHayes</span><span class="chip">@Bedroom</span></div>
+        <div class="sub-panel simple-panel" id="shot-history"><div class="log-row"><b>第 1 次</b><span>成功 · 可采用</span></div><div class="log-row"><b>第 2 次</b><span>失败 · 模型超时</span></div><div class="log-row"><b>第 3 次</b><span>当前采用版本</span></div><button class="ghost full" data-subpage="shot-prompt">返回提示词</button></div>
+        <div class="sub-panel simple-panel" id="shot-batch"><button class="primary">生成当前集</button><button class="ghost">生成选中分镜</button><button class="ghost" data-subpage="shot-prompt">返回提示词</button></div>
+      </section>
+        <aside class="video-preview">
+          <div class="preview-tabs"><button class="active" data-subpage="shot-prompt">分镜生成</button><button>原视频</button></div>
+          <div class="phone-video">
+            <div class="video-tools">
+              <button title="提取关键帧" data-open-modal="keyframe-modal">▣</button>
+              <button title="放大查看" data-open-modal="video-zoom-modal">⛶</button>
+            </div>
+            <div class="play">▶</div>
+          </div>
+            <div class="preview-history">
+              <div class="history-head"><b>生成记录</b><span>第 3 次 · 当前采用版本</span></div>
+              <div class="history-thumbs">
+                <button class="history-thumb active"><span>1</span></button>
+                <button class="history-thumb"><span>2</span></button>
+                <button class="history-thumb"><span>3</span></button>
+                <button class="history-thumb"><span>4</span></button>
+              </div>
+            </div>
+        </aside>
+        <section class="shot-strip">
+          <div class="strip-head"><h3>19 分镜 · 自动切分，可自由增删改查</h3><button class="primary small" data-subpage="shot-batch">批量生成</button></div>
+          <div class="thumb-row">
+            <div class="shot-thumb active"><span>分镜 01 · 00:00-00:08 · 已采用</span></div><button class="insert-shot" aria-label="在分镜 01 后新增">+</button><div class="shot-thumb"><span>分镜 02 · 00:08-00:14 · 未生成</span></div><button class="insert-shot" aria-label="在分镜 02 后新增">+</button><div class="shot-thumb"><span>分镜 03 · 00:14-00:21 · 已采用</span></div><button class="insert-shot" aria-label="在分镜 03 后新增">+</button><div class="shot-thumb"><span>分镜 04 · 00:21-00:28 · 生成中</span></div><button class="insert-shot" aria-label="在分镜 04 后新增">+</button><div class="shot-thumb"><span>分镜 05 · 00:28-00:38 · 已采用</span></div><button class="insert-shot" aria-label="在分镜 05 后新增">+</button><div class="shot-thumb"><span>分镜 06 · 00:38-00:50 · 未采用</span></div>
+          </div>
+        </section>
+    </section>
+
+    <section class="screen video-page" id="compare">
+      <aside class="episode-rail">
+        <span>集数</span>
+        <button class="active">1</button><button>2</button><button>3</button><button>4</button><button>5</button><button>6</button><button>7</button><button>8</button>
+      </aside>
+      <div class="video-toolbar">
+        <label class="timeline-toggle"><input type="checkbox" checked> 成片时间线对齐</label>
+        <div class="module-tabs compact-tabs">
+          <button class="active" data-subpage="video-compare">对比播放</button>
+          <button data-subpage="video-list">片段列表</button>
+          <button data-subpage="video-export">导出</button>
+        </div>
+      </div>
+      <div class="video-compare sub-panel active" id="video-compare">
+        <div class="player-card"><div class="player-label">原片成片</div><div class="vertical-video"></div><div class="player-controls">00:03 / 02:39　已对齐播放</div></div>
+        <div class="player-card"><div class="player-label new">重制成片</div><div class="vertical-video remake"></div><div class="player-controls">00:03 / 02:46　已对齐播放</div></div>
+      </div>
+      <div class="sub-panel video-list-panel" id="video-list">
+        <div class="list-summary"><b>当前完整成片不可导出</b><span>还有 2 个分镜缺少当前采用版本</span></div>
+        <div class="video-seg active"><b>分镜 01</b><span>已生成 · 当前采用版本 · 可单独导出</span></div>
+        <div class="video-seg"><b>分镜 02</b><span>未生成 · 不参与完整成片</span></div>
+        <div class="video-seg"><b>分镜 03</b><span>已生成 · 当前采用版本 · 可单独导出</span></div>
+        <div class="video-seg"><b>分镜 04</b><span>生成中 · 等待采用版本</span></div>
+      </div>
+      <div class="sub-panel simple-panel" id="video-export"><button class="primary">导出完整成片</button><button class="ghost">导出选中视频片段</button><button class="ghost">导出当前片段</button><p class="export-note">完整成片要求所有分镜都有当前采用版本；片段导出仅导出已生成视频。</p></div>
+      <div class="video-timeline">
+        <div class="time-ruler">原片侧只播放完整成片；新生成侧可查看重制成片或单独片段。时间线对齐仅在成片对比成片时可用。</div>
+        <div class="clip-row"><div class="clip active">分镜 01 · 已采用</div><div class="clip missing">分镜 02 · 缺失</div><div class="clip">分镜 03 · 已采用</div><div class="clip missing">分镜 04 · 生成中</div><div class="clip">分镜 05 · 已采用</div></div>
+      </div>
+      </section>
+    </main>
+    <div class="modal-overlay" id="keyframe-modal" aria-hidden="true">
+      <section class="keyframe-dialog" role="dialog" aria-modal="true" aria-labelledby="keyframe-title">
+        <div class="modal-titlebar"><h3 id="keyframe-title">视频截帧</h3><button data-close-modal>×</button></div>
+        <div class="keyframe-player">
+          <div class="keyframe-video"></div>
+          <div class="keyframe-controls"><button>◀</button><button class="round-play">▶</button><button>▶</button></div>
+        </div>
+        <div class="frame-timeline">
+          <div class="time-labels"><span>00:00</span><span>00:01</span><span>00:02</span><span>00:03</span><span>00:04</span><span>00:05</span><span>00:06</span><span>00:07</span><span>00:08</span><span>00:09</span><span>00:10</span><span>00:11</span><span>00:12</span><span>00:13</span><span>00:14</span></div>
+          <div class="timeline-ticks"></div>
+          <div class="timeline-frames"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
+        <button class="capture-btn">▣</button>
+      </section>
+    </div>
+    <div class="modal-overlay" id="video-zoom-modal" aria-hidden="true">
+      <section class="zoom-dialog" role="dialog" aria-modal="true" aria-labelledby="zoom-title">
+        <div class="modal-titlebar"><h3 id="zoom-title">放大查看</h3><button data-close-modal>×</button></div>
+        <div class="zoom-video"><div class="play">▶</div></div>
+      </section>
+    </div>
+    <div class="modal-overlay" id="backend-project-modal" aria-hidden="true">
+      <section class="backend-dialog" role="dialog" aria-modal="true" aria-labelledby="backend-project-title">
+        <div class="modal-titlebar light"><h3 id="backend-project-title">选择后台视频项目</h3><button data-close-modal>×</button></div>
+        <div class="backend-search">
+          <input value="六年后再遇首富前男友" aria-label="搜索项目名或剧 ID">
+          <button class="ghost">搜索</button>
+        </div>
+        <div class="backend-tabs">
+          <button class="active">全部</button>
+          <button>AI 剧</button>
+          <button>真人剧</button>
+        </div>
+        <div class="backend-projects">
+          <article class="backend-project active ai" data-project-type="ai">
+            <i>AI 剧</i>
+            <b>六年后再遇首富前男友</b>
+            <span>剧 ID：DRM-20260629-0916</span>
+            <small>40 集 · AIGC 短剧生产平台 · 出海短剧组 · 2026-06-29 10:20</small>
+            <p>可关联制作过程中的角色、场景原资产图和原资产描述。</p>
+          </article>
+          <article class="backend-project live" data-project-type="live">
+            <i>真人剧</i>
+            <b>六年后再遇首富前男友-真人投放版</b>
+            <span>剧 ID：DRM-20260621-0448</span>
+            <small>40 集 · 视频管理系统 · 投放素材组 · 2026-06-21 18:32</small>
+            <p>无 AIGC 资产可复用，将通过视频抽帧、视觉理解和 OCR 普通分析。</p>
+          </article>
+        </div>
+        <div class="backend-actions">
+          <button class="primary" id="select-backend-project">选择项目</button>
+          <button class="ghost" data-close-modal>取消</button>
+        </div>
+      </section>
+    </div>
+    <div class="modal-overlay" id="upload-confirm-modal" aria-hidden="true">
+      <section class="upload-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="upload-confirm-title">
+        <div class="modal-titlebar light"><h3 id="upload-confirm-title">确认上传参数</h3><button data-close-modal>×</button></div>
+        <div class="confirm-body">
+          <div class="confirm-copy">
+            <b>请确认本项目的重制目标和生成参数</b>
+            <span>确认后将进入原片上传进度页，上传完成后再选择分析方式。</span>
+          </div>
+          <div class="confirm-grid">
+            <article>
+              <span>视频来源</span>
+              <b id="confirm-source-label">本地视频</b>
+            </article>
+            <article>
+              <span>项目名称</span>
+              <b id="confirm-project-title">六年后再遇首富前男友</b>
+            </article>
+            <article>
+              <span>剧集数量</span>
+              <b id="confirm-episode-count">40 集</b>
+            </article>
+            <article>
+              <span>目标国家</span>
+              <b id="confirm-target-country">美国</b>
+            </article>
+            <article>
+              <span>画幅</span>
+              <b id="confirm-frame-ratio">16:9</b>
+            </article>
+            <article>
+              <span>清晰度</span>
+              <b id="confirm-resolution">720p</b>
+            </article>
+            <article>
+              <span>风格类型</span>
+              <b id="confirm-style-type">写实通用</b>
+            </article>
+            <article>
+              <span>模型偏好</span>
+              <b id="confirm-model-preference">默认视频生成模型</b>
+            </article>
+          </div>
+        </div>
+        <div class="confirm-actions">
+          <button class="ghost" data-close-modal>返回修改</button>
+          <button class="primary" id="confirm-start-upload">确认并开始上传</button>
+        </div>
+      </section>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+  </html>
