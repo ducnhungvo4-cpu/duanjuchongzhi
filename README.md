@@ -34,6 +34,113 @@ npm run dev
 http://localhost:5173
 ```
 
+## MVP 工程预览
+
+当前仓库已新增本地单机 MVP 工程骨架：
+
+```text
+backend/   FastAPI + SQLite + 本地文件存储
+frontend/  React + TypeScript + Vite
+config/    Agent 节点提示词和模型配置
+```
+
+启动后端：
+
+```powershell
+npm run backend
+```
+
+默认地址：
+
+```text
+http://localhost:8000
+```
+
+启动前端：
+
+```powershell
+npm run frontend
+```
+
+默认地址：
+
+```text
+http://localhost:5174
+```
+
+前端依赖首次安装：
+
+```powershell
+npm --prefix frontend install
+```
+
+后端基础检查：
+
+```powershell
+npm run check:backend
+```
+
+前端构建检查：
+
+```powershell
+npm --prefix frontend run build
+```
+
+### 模型配置
+
+默认使用 `mock` 模式：
+
+```json
+{
+  "mode": "mock"
+}
+```
+
+切换真实火山方舟接口时，修改 `config/models.json`：
+
+```json
+{
+  "mode": "volcengine"
+}
+```
+
+本地启动后端前设置 API Key。不要把 Key 写入仓库文件。
+
+```powershell
+$env:ARK_API_KEY="你的方舟 API Key"
+npm run backend
+```
+
+方舟 OpenAI 兼容接口默认地址：
+
+```text
+https://ark.cn-beijing.volces.com/api/v3
+```
+
+还需要在 `config/models.json` 中补齐模型或推理接入点 ID：
+
+```json
+{
+  "volcengine": {
+    "textModel": "doubao-seed-2-1-pro-260628",
+    "vlmModel": "doubao-seed-2-1-pro-260628",
+    "imageModel": "",
+    "videoModel": ""
+  }
+}
+```
+
+当前后端已经接好 Ark OpenAI-compatible `responses` 文本 JSON 通路。视频文件多模态输入、图片生成和视频生成的真实请求格式，需要根据你实际使用的豆包模型或推理接入点继续补齐。
+
+设置 API Key 并切换到 `volcengine` 模式后，可以先测试文本模型连通性：
+
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri http://localhost:8000/api/model-test/chat `
+  -ContentType "application/json" `
+  -Body '{"prompt":"请回复模型连接正常"}'
+```
+
 ## 清理口径
 
 已保留：

@@ -6,6 +6,7 @@ dist/
 build/
 .cache/
 .vite/
+data/
 
 # local env
 .env
@@ -18,6 +19,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+*.tsbuildinfo
 
 # generated / temporary files
 tmp/

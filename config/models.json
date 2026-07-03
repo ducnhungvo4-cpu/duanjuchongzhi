@@ -1,0 +1,55 @@
+{
+  "mode": "volcengine",
+  "provider": "volcengine",
+  "defaults": {
+    "targetCountry": "美国",
+    "targetLanguage": "英语",
+    "aspectRatio": "保持原视频画幅",
+    "resolution": "720p",
+    "style": "真人写实"
+  },
+  "volcengine": {
+    "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
+    "region": "",
+    "textModel": "doubao-seed-2-1-pro-260628",
+    "vlmModel": "doubao-seed-2-1-pro-260628",
+    "imageModel": "doubao-seedream-5-0-260128",
+    "videoModel": "",
+    "videoGenerationModel": "doubao-seedance-2.0",
+    "responseTimeoutSeconds": 360,
+    "maxOutputTokens": 32768,
+    "imageSize": "2K",
+    "imageWatermark": true,
+    "thinking": {
+      "type": "disabled"
+    }
+  },
+  "agents": {
+    "assetExtractionLocalization": {
+      "enabled": true,
+      "model": "vlmModel",
+      "promptFile": "config/agents/asset_extraction_localization.md",
+      "temperature": 0.2,
+      "outputFormat": "json"
+    },
+    "storyboardPromptGeneration": {
+      "enabled": true,
+      "model": "vlmModel",
+      "promptFile": "config/agents/storyboard_prompt_generation.md",
+      "temperature": 0.25,
+      "outputFormat": "json"
+    },
+    "assetImageGeneration": {
+      "enabled": true,
+      "model": "imageModel",
+      "promptFile": "config/agents/asset_image_generation.md",
+      "outputFormat": "file"
+    },
+    "videoGeneration": {
+      "enabled": false,
+      "model": "videoModel",
+      "promptFile": "config/agents/video_generation.md",
+      "outputFormat": "file"
+    }
+  }
+}
