@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "video-remake-workshop",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-23",
+  "workers_dev": true,
+  "assets": {
+    "directory": "assets",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "vars": {
+    "ACCESS_USER": "owner"
+  }
+}

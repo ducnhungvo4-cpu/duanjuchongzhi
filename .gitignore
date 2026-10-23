@@ -5,7 +5,11 @@ node_modules/
 dist/
 build/
 .cache/
+.wrangler/
 .vite/
+cloudflare/assets/
+cloudflare/.deploy-credentials.json
+**/.dev.vars
 data/
 artifacts/
 frontend/public/design-proposals/
