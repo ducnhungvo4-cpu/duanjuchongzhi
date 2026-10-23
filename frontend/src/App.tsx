@@ -1,6 +1,7 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { VideoComposition } from "./VideoComposition";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8002";
+const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
 const ROLE_FIXED_CONSTRAINT = `【固定约束】
 风格：真人写实风格 画质：模拟真实拍摄效果，8K超高清
 光线：明亮柔和
@@ -16,14 +17,10 @@ const ROLE_FIXED_CONSTRAINT = `【固定约束】
 
 type Screen = "home" | "source" | "analysis" | "assets" | "segments" | "compare";
 type StepScreen = "home" | "assets" | "segments" | "compare";
-type AssetTab = "角色" | "场景" | "道具" | "批量送审";
-type SourceMode = "local" | "backend";
+type AssetTab = "角色" | "场景" | "道具" | "资产进度";
 type UploadMode = "folder" | "single";
-type BackendType = "ai" | "live";
-type ModalName = "backend-project-modal" | "upload-confirm-modal" | "keyframe-modal" | "video-zoom-modal" | "image-view-modal" | null;
-type SegmentPanel = "shot-prompt" | "shot-assets" | "shot-history" | "shot-batch";
-type ShotSidepanel = "shot-asset-overview" | "shot-frame";
-type VideoPanel = "video-compare" | "video-list" | "video-export";
+type ModalName = "upload-confirm-modal" | "image-view-modal" | null;
+type SegmentPanel = "shot-prompt" | "shot-assets" | "shot-history";
 
 type Project = {
   id: string;
@@ -31,6 +28,12 @@ type Project = {
   target_country: string;
   target_language: string;
   status: string;
+  remake_mode?: "overseas_localization" | "cg_3d" | "asset_replacement";
+  source_language?: string;
+  storyboard_visual_style?: "live_action" | "cg_3d";
+  replace_characters?: number;
+  replace_scenes?: number;
+  parent_project_id?: string;
 };
 
 type Episode = {
@@ -40,6 +43,7 @@ type Episode = {
   size_bytes: number;
   status: string;
   source_url: string;
+  file_url?: string;
   ark_file_id: string;
   ark_file_status: string;
   ark_file_error: string;
@@ -60,6 +64,7 @@ type Asset = {
 
 type Storyboard = {
   id: string;
+  episode_id: string;
   title: string;
   time_range: string;
   prompt: string;
@@ -73,6 +78,7 @@ type VideoGeneration = {
   status: string;
   output_path: string;
   created_at: string;
+  payload?: Record<string, any>;
 };
 
 type Task = {
@@ -101,9 +107,8 @@ type ImageView = {
 } | null;
 
 type SelectedSource = {
-  kind: SourceMode;
+  kind: "local";
   uploadMode?: UploadMode;
-  backendType?: BackendType;
   title: string;
   meta: string;
 };
@@ -131,7 +136,7 @@ function pickText(source: Record<string, any> | undefined, keys: string[]) {
 }
 
 function mainAssetKey(asset: Asset) {
-  return pickText(asset.payload, ["主资产编号", "道具编号"]) || `${asset.asset_type}:${asset.name}:${asset.localized_name}`;
+  return pickText(asset.payload, ["项目主资产Key", "主资产编号", "道具编号"]) || `${asset.asset_type}:${asset.name}:${asset.localized_name}`;
 }
 
 function variantName(asset: Asset) {
@@ -158,6 +163,7 @@ function assetPrompt(asset: Asset) {
     pickText(asset.payload, ["最终资产图生成提示词"]) ||
     pickText(child, ["角色资产图生成提示词", "场景资产图生成提示词", "道具资产图生成提示词"]) ||
     pickText(asset.payload, ["角色资产图生成提示词", "场景资产图生成提示词", "道具资产图生成提示词"]);
+  if (prompt) return prompt;
   if (asset.asset_type !== "角色") return prompt;
   if (prompt.includes("【基础设定】") && prompt.includes("【固定约束】")) return prompt;
   const field = (section: string, key: string, fallbackKeys: string[] = []) => {
@@ -319,7 +325,11 @@ function assetDisplayVariable(asset: Asset) {
 }
 
 function assetDisplayMeta(asset: Asset) {
-  return [assetDisplayVariable(asset), asset.localized_name && asset.localized_name !== assetDisplayName(asset) ? asset.localized_name : ""]
+  const episodeIndexes = asset.payload?.出现集数;
+  const episodeMeta = Array.isArray(episodeIndexes) && episodeIndexes.length
+    ? `出现：第 ${episodeIndexes.join("、")} 集`
+    : "";
+  return [assetDisplayVariable(asset), asset.localized_name && asset.localized_name !== assetDisplayName(asset) ? asset.localized_name : "", episodeMeta]
     .filter(Boolean)
     .join(" · ");
 }
@@ -366,15 +376,18 @@ function detailRows(asset: Asset) {
 }
 
 function originalAssetDescription(asset: Asset) {
+  if (asset.payload?.["原片资产描述"] === "原片描述未留存") return "原片描述未留存。此项目兼容沿用，不把海外化描述误标为原片事实。";
+  if (typeof asset.payload?.["原片资产描述"] === "string" && asset.payload["原片资产描述"]) return asset.payload["原片资产描述"];
   const child = currentChild(asset);
   return [
     pickText(asset.payload, ["原剧核心形象描述", "原剧场景描述", "原剧道具描述"]),
     pickText(child, ["原剧视觉形象描述", "原剧视觉描述", "原剧子资产描述"]),
     pickText(asset.payload, ["剧情身份", "剧情功能"]),
-  ].filter(Boolean).join("\n") || "来自原片分析：保留原资产在剧情中的身份、外观、功能和出现状态。";
+  ].filter(Boolean).join("\n") || "原片描述未留存";
 }
 
 function localizedAssetDescription(asset: Asset) {
+  if (typeof asset.payload?.["目标生成描述"] === "string" && asset.payload["目标生成描述"]) return asset.payload["目标生成描述"];
   const child = currentChild(asset);
   return [
     pickText(asset.payload, ["本地化核心形象描述", "本地化场景描述", "本地化道具描述"]),
@@ -403,7 +416,8 @@ function apiAssetUrl(path?: string) {
 }
 
 function selectedAssetImage(asset?: Asset) {
-  return asset?.images?.find((item) => item.is_selected) ?? asset?.images?.[0];
+  if (asset?.payload?.effectiveAssetSource === "source") return undefined;
+  return asset?.images?.find((item) => item.is_selected);
 }
 
 function selectedAssetImageUrl(asset?: Asset) {
@@ -436,7 +450,7 @@ function groupConfirmedImageUrl(group: AssetGroup) {
   return "";
 }
 
-function uploadProjectTitle(files: FileList | null, fallback: string) {
+function uploadProjectTitle(files: ArrayLike<File> | null, fallback: string) {
   const first = files?.[0] as (File & { webkitRelativePath?: string }) | undefined;
   if (!first) return fallback;
   const relative = first.webkitRelativePath || "";
@@ -449,6 +463,12 @@ function isTaskRunning(task?: Task | null) {
   return Boolean(task && ["运行中", "pending", "processing"].includes(task.status));
 }
 
+function mockGenerationLabel(status: string) {
+  if (["成功", "完成", "completed"].includes(status)) return "模拟请求已完成（未生成视频）";
+  if (["失败", "failed"].includes(status)) return "模拟请求失败（未生成视频）";
+  return "模拟请求处理中（未生成视频）";
+}
+
 export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
@@ -458,35 +478,49 @@ export function App() {
   const [generations, setGenerations] = useState<VideoGeneration[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [screen, setScreen] = useState<Screen>("home");
-  const [sourceMode, setSourceMode] = useState<SourceMode>("local");
+  const [assetSidebarCollapsed, setAssetSidebarCollapsed] = useState(false);
+  const [previewPanelCollapsed, setPreviewPanelCollapsed] = useState(false);
   const [selectedSource, setSelectedSource] = useState<SelectedSource | null>(null);
-  const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[] | null>(null);
   const [uploadState, setUploadState] = useState<"idle" | "selected" | "uploading" | "uploaded" | "failed">("idle");
   const [modal, setModal] = useState<ModalName>(null);
   const [imageView, setImageView] = useState<ImageView>(null);
-  const [backendType, setBackendType] = useState<BackendType>("ai");
   const [targetCountry, setTargetCountry] = useState("美国");
+  const [targetLanguage, setTargetLanguage] = useState("英语");
+  const [remakeMode, setRemakeMode] = useState<Project["remake_mode"]>("overseas_localization");
+  const [sourceLanguage, setSourceLanguage] = useState("");
+  const [storyboardVisualStyle, setStoryboardVisualStyle] = useState<Project["storyboard_visual_style"]>("live_action");
+  const [replaceCharacters, setReplaceCharacters] = useState(false);
+  const [replaceScenes, setReplaceScenes] = useState(false);
+  const [targetAssetDescription, setTargetAssetDescription] = useState("");
   const [frameRatio, setFrameRatio] = useState("9:16");
   const [resolution, setResolution] = useState("720p");
   const [styleType, setStyleType] = useState("写实通用");
   const [assetTab, setAssetTab] = useState<AssetTab>("角色");
-  const [assetView, setAssetView] = useState<"overview" | "detail" | "batch">("overview");
+  const [assetView, setAssetView] = useState<"overview" | "detail">("overview");
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedStoryboardId, setSelectedStoryboardId] = useState<string | null>(null);
   const [segmentPanel, setSegmentPanel] = useState<SegmentPanel>("shot-prompt");
-  const [shotSidepanel, setShotSidepanel] = useState<ShotSidepanel>("shot-asset-overview");
-  const [videoPanel, setVideoPanel] = useState<VideoPanel>("video-compare");
+  const [editingStoryboardBody, setEditingStoryboardBody] = useState(false);
   const [activeAnalysisTask, setActiveAnalysisTask] = useState<Task | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState({ story: 0, asset: 0 });
+  const [analysisNow, setAnalysisNow] = useState(Date.now());
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionCaret, setMentionCaret] = useState(0);
+  const [storyboardAssetSearch, setStoryboardAssetSearch] = useState("");
+  const [storyboardAssetLayout, setStoryboardAssetLayout] = useState<"list" | "grid">("list");
+  const [collapsedStoryboardAssetGroups, setCollapsedStoryboardAssetGroups] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [storyboardLoading, setStoryboardLoading] = useState(false);
   const [generatingAssetId, setGeneratingAssetId] = useState<string | null>(null);
   const [message, setMessage] = useState("准备就绪");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const storyboardPatchQueue = useRef<Promise<void>>(Promise.resolve());
+  const assetImageInputRef = useRef<HTMLInputElement | null>(null);
+  const pollingTaskIds = useRef(new Set<string>());
 
   const selectedEpisode = useMemo(
     () => episodes.find((episode) => episode.id === selectedEpisodeId) ?? null,
@@ -520,7 +554,7 @@ export function App() {
     return Array.from(map.values());
   }, [assets]);
   const filteredGroups = useMemo(
-    () => assetGroups.filter((group) => assetTab === "批量送审" || group.type === assetTab),
+    () => assetGroups.filter((group) => assetTab === "资产进度" || group.type === assetTab),
     [assetGroups, assetTab]
   );
   const roleCount = assets.filter((asset) => asset.asset_type === "角色").length;
@@ -559,9 +593,13 @@ export function App() {
     return assets.filter((asset) => variableSet.has(asset.variable) || variableSet.has(assetDisplayVariable(asset)));
   }, [assets, latestAssetIndex, selectedStoryboard]);
   const selectedStoryboardPrompt = useMemo(
-    () => convertPromptVariables(selectedStoryboard?.prompt ?? "", assets),
+    () => convertPromptVariables(
+      String(selectedStoryboard?.payload?.["分镜生成正文"] ?? selectedStoryboard?.payload?.["源分镜文本"] ?? selectedStoryboard?.prompt ?? ""),
+      assets
+    ),
     [assets, selectedStoryboard]
   );
+  useEffect(() => setEditingStoryboardBody(false), [selectedStoryboardId]);
   const mentionOptions = useMemo(() => {
     const query = (mentionQuery ?? "").toLowerCase();
     return selectedStoryboardAssets.filter((asset) => {
@@ -569,9 +607,17 @@ export function App() {
       return `${assetDisplayName(asset)} ${assetDisplayVariable(asset)}`.toLowerCase().includes(query);
     });
   }, [mentionQuery, selectedStoryboardAssets]);
-  const canUseAigc = selectedSource?.kind === "backend" && selectedSource.backendType === "ai";
   const isSingleUpload = selectedSource?.kind === "local" && selectedSource.uploadMode === "single";
-  const sourceEpisodeCount = isSingleUpload ? 1 : Math.max(episodes.length, selectedFiles?.length ?? 0, 40);
+  const sourceEpisodeCount = isSingleUpload
+    ? 1
+    : selectedSource?.kind === "local"
+      ? Math.max(episodes.length, selectedFiles?.length ?? 0)
+      : Math.max(episodes.length, 40);
+  const uploadedEpisodeCount = episodes.filter((episode) => episode.ark_file_id || episode.status.includes("已上传")).length;
+  const hasUploadedEpisodes = uploadedEpisodeCount > 0;
+  const effectiveUploadState = hasUploadedEpisodes ? "uploaded" : uploadState;
+  const failedEpisodeCount = effectiveUploadState === "failed" ? Math.max(1, (selectedFiles?.length ?? 0) - uploadedEpisodeCount) : 0;
+  const uploadingEpisodeCount = effectiveUploadState === "uploading" ? Math.max(sourceEpisodeCount - uploadedEpisodeCount, 0) : 0;
 
   function pickDefaultEpisodeId(items: Episode[], currentId: string | null) {
     if (currentId && items.some((episode) => episode.id === currentId)) return currentId;
@@ -590,10 +636,54 @@ export function App() {
 
   async function selectProject(projectId: string) {
     const data = await request<{ project: Project; episodes: Episode[] }>(`/api/projects/${projectId}`);
+    const defaultEpisodeId = pickDefaultEpisodeId(data.episodes, selectedEpisodeId);
     setCurrentProject(data.project);
+    setTargetCountry(data.project.target_country);
+    const savedLanguage = data.project.target_language || "英语";
+    setTargetLanguage(({ English: "英语", Japanese: "日语", Korean: "韩语", Spanish: "西班牙语", French: "法语" } as Record<string, string>)[savedLanguage] || savedLanguage);
+    setRemakeMode(data.project.remake_mode ?? "overseas_localization");
+    setSourceLanguage(data.project.source_language ?? "");
+    setStoryboardVisualStyle(data.project.storyboard_visual_style ?? "live_action");
+    setReplaceCharacters(Boolean(data.project.replace_characters));
+    setReplaceScenes(Boolean(data.project.replace_scenes));
     setEpisodes(data.episodes);
-    setSelectedEpisodeId((currentId) => pickDefaultEpisodeId(data.episodes, currentId));
-    await Promise.all([loadAssets(projectId), loadStoryboards(projectId), loadGenerations(projectId), loadTasks(projectId)]);
+    if (data.episodes.some((episode) => episode.ark_file_id || episode.status.includes("已上传"))) {
+      setUploadState("uploaded");
+    }
+    setSelectedEpisodeId(defaultEpisodeId);
+    const [, , , loadedTasks] = await Promise.all([loadAssets(projectId), loadStoryboards(projectId, defaultEpisodeId), loadGenerations(projectId), loadTasks(projectId)]);
+    const recoveryTaskId = sessionStorage.getItem("activeAnalysisTaskId");
+    const storedRecoveryTask = loadedTasks.find((task) => task.id === recoveryTaskId);
+    const recentRunningTask = loadedTasks.find((task) =>
+      task.episode_id === defaultEpisodeId
+      && task.task_type === "asset_extraction"
+      && isTaskRunning(task)
+      && Date.now() - new Date(task.created_at).getTime() < 30 * 60 * 1000
+    );
+    const recoveryTask = storedRecoveryTask || recentRunningTask;
+    if (recoveryTask) {
+      if (isTaskRunning(recoveryTask)) sessionStorage.setItem("activeAnalysisTaskId", recoveryTask.id);
+      setActiveAnalysisTask(recoveryTask);
+      setScreen("analysis");
+      setAnalysisProgress(isTaskRunning(recoveryTask) ? { story: 8, asset: 8 } : { story: 100, asset: 100 });
+      if (isTaskRunning(recoveryTask)) {
+        setMessage(recoveryTask.message || "后台分析任务仍在运行");
+        if (!pollingTaskIds.current.has(recoveryTask.id)) {
+          pollingTaskIds.current.add(recoveryTask.id);
+          void pollTask(recoveryTask.id, async (doneTask) => {
+            setActiveAnalysisTask(doneTask);
+            await Promise.all([loadAssets(projectId), loadTasks(projectId)]);
+            setAnalysisProgress({ story: 100, asset: 100 });
+            setMessage(doneTask.status === "失败" ? doneTask.message : "分析完成，可以进入设定确认资产");
+            sessionStorage.removeItem("activeAnalysisTaskId");
+            pollingTaskIds.current.delete(doneTask.id);
+          });
+        }
+      } else {
+        setMessage(recoveryTask.status === "失败" ? recoveryTask.message : "分析完成，可以进入设定确认资产");
+        sessionStorage.removeItem("activeAnalysisTaskId");
+      }
+    }
   }
 
   function clearCurrentWorkspace() {
@@ -606,6 +696,7 @@ export function App() {
     setSelectedAssetId(null);
     setSelectedStoryboardId(null);
     setActiveAnalysisTask(null);
+    setStoryboardLoading(false);
     setAnalysisProgress({ story: 0, asset: 0 });
   }
 
@@ -613,8 +704,9 @@ export function App() {
     const data = await request<{ project: Project }>("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, targetCountry, targetLanguage: "English" }),
+      body: JSON.stringify({ title, targetCountry, targetLanguage, remakeMode, sourceLanguage, storyboardVisualStyle: remakeMode === "cg_3d" ? "cg_3d" : storyboardVisualStyle, replaceCharacters, replaceScenes }),
     });
+    setStoryboardVisualStyle(data.project.storyboard_visual_style ?? "live_action");
     setCurrentProject(data.project);
     clearCurrentWorkspace();
     setProjects((items) => [data.project, ...items.filter((item) => item.id !== data.project.id)]);
@@ -627,9 +719,11 @@ export function App() {
     setAssets(data.assets);
   }
 
-  async function loadStoryboards(projectId = currentProject?.id) {
+  async function loadStoryboards(projectId = currentProject?.id, episodeId?: string | null) {
     if (!projectId) return;
-    const data = await request<{ storyboards: Storyboard[] }>(`/api/projects/${projectId}/storyboards`);
+    const epId = episodeId ?? selectedEpisodeId;
+    const params = epId ? `?episode_id=${epId}` : "";
+    const data = await request<{ storyboards: Storyboard[] }>(`/api/projects/${projectId}/storyboards${params}`);
     setStoryboards(data.storyboards);
   }
 
@@ -640,9 +734,10 @@ export function App() {
   }
 
   async function loadTasks(projectId = currentProject?.id) {
-    if (!projectId) return;
+    if (!projectId) return [];
     const data = await request<{ tasks: Task[] }>(`/api/projects/${projectId}/tasks`);
     setTasks(data.tasks);
+    return data.tasks;
   }
 
   function scheduleRefresh(projectId: string) {
@@ -658,7 +753,7 @@ export function App() {
 
   function showAssetOverview(tab: AssetTab) {
     setAssetTab(tab);
-    setAssetView(tab === "批量送审" ? "batch" : "overview");
+    setAssetView("overview");
   }
 
   function selectAssetCard(asset: Asset) {
@@ -675,9 +770,10 @@ export function App() {
 
   function handleLocalFiles(files: FileList | null, uploadMode: UploadMode) {
     if (!files?.length) return;
-    const firstFile = files[0];
-    const title = uploadProjectTitle(files, "未命名本地视频项目");
-    setSelectedFiles(files);
+    const fileItems = Array.from(files);
+    const firstFile = fileItems[0];
+    const title = uploadProjectTitle(fileItems, "未命名本地视频项目");
+    setSelectedFiles(fileItems);
     setSelectedSource({
       kind: "local",
       uploadMode,
@@ -696,7 +792,7 @@ export function App() {
       const data = await request<{ project: Project }>("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "六年后再遇首富前男友", targetCountry, targetLanguage: "英语" }),
+        body: JSON.stringify({ title: "六年后再遇首富前男友", targetCountry, targetLanguage, remakeMode, sourceLanguage, storyboardVisualStyle: remakeMode === "cg_3d" ? "cg_3d" : storyboardVisualStyle, replaceCharacters, replaceScenes }),
       });
       setMessage("项目已创建");
       await loadProjects();
@@ -706,39 +802,20 @@ export function App() {
     }
   }
 
-  async function confirmBackendProject() {
-    const isAi = backendType === "ai";
-    setSelectedSource({
-      kind: "backend",
-      backendType,
-      title: isAi ? "六年后再遇首富前男友" : "六年后再遇首富前男友-真人投放版",
-      meta: isAi
-        ? "后台项目 · AI 剧 · 40 集 · 可关联 AIGC 资产"
-        : "后台项目 · 真人剧 · 40 集 · 走普通视频分析",
-    });
-    setUploadState("selected");
-    setModal(null);
-    setMessage("后台项目已选择，请确认参数后开始上传");
-  }
-
   async function uploadEpisodes(files = selectedFiles) {
-    if (selectedSource?.kind === "local" && !files?.length) return;
+    if (selectedSource?.kind === "local" && !files?.length) {
+      setMessage("未读取到本地视频文件，请重新选择文件夹后再上传");
+      setModal(null);
+      return;
+    }
     setBusy(true);
     setUploadState("uploading");
     setScreen("source");
     setModal(null);
     try {
-      const project =
-        selectedSource?.kind === "local"
-          ? await createProjectForUpload(selectedSource.title)
-          : currentProject ?? await createProjectForUpload(selectedSource?.title ?? "后台视频项目");
-      if (selectedSource?.kind === "backend") {
-        window.setTimeout(() => {
-          setUploadState("uploaded");
-          setMessage("后台项目链路已模拟拉取完成，可选择分析方式");
-        }, 900);
-        return;
-      }
+      const project = currentProject && !episodes.length
+        ? currentProject
+        : await createProjectForUpload(selectedSource?.title ?? "未命名本地视频项目");
       const body = new FormData();
       Array.from(files ?? []).forEach((file) => body.append("files", file));
       await request(`/api/projects/${project.id}/episodes/upload`, { method: "POST", body });
@@ -768,15 +845,16 @@ export function App() {
     }
   }
 
-  async function runBackendTask(taskType: "asset_extraction" | "storyboard_generation" | "video_generation") {
+  async function runBackendTask(taskType: "asset_extraction" | "storyboard_generation" | "video_generation" | "series_analysis") {
     if (!currentProject) return null;
-    if (taskType !== "video_generation" && !selectedEpisodeId) {
+    if (taskType !== "video_generation" && taskType !== "series_analysis" && !selectedEpisodeId) {
       setMessage("请先选择要处理的视频");
       return null;
     }
-    const payload =
-      taskType === "video_generation"
-        ? { taskType, storyboardId: selectedStoryboard?.id ?? storyboards[0]?.id }
+    const payload = taskType === "video_generation"
+      ? { taskType, storyboardId: selectedStoryboard?.id ?? storyboards[0]?.id }
+      : taskType === "series_analysis"
+        ? { taskType }
         : { taskType, episodeId: selectedEpisodeId };
     const data = await request<{ task: Task }>(`/api/projects/${currentProject.id}/tasks/run`, {
       method: "POST",
@@ -789,30 +867,70 @@ export function App() {
     return data.task;
   }
 
-  async function pollTask(taskId: string, onDone: (task: Task) => Promise<void> | void) {
-    for (let index = 0; index < 160; index += 1) {
+  async function pollTask(
+    taskId: string,
+    onDone: (task: Task) => Promise<void> | void,
+    onProgress?: (task: Task) => Promise<void> | void
+  ) {
+    let consecutiveErrors = 0;
+    for (let index = 0; index < 2400; index += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, 3000));
-      const data = await request<{ task: Task }>(`/api/tasks/${taskId}`);
-      setActiveAnalysisTask(data.task);
-      if (!isTaskRunning(data.task)) {
-        await onDone(data.task);
-        return;
+      try {
+        const data = await request<{ task: Task }>(`/api/tasks/${taskId}`);
+        consecutiveErrors = 0;
+        setActiveAnalysisTask(data.task);
+        setMessage(data.task.message);
+        await onProgress?.(data.task);
+        if (!isTaskRunning(data.task)) {
+          await onDone(data.task);
+          sessionStorage.removeItem("activeAnalysisTaskId");
+          pollingTaskIds.current.delete(taskId);
+          return;
+        }
+      } catch {
+        consecutiveErrors += 1;
+        if (consecutiveErrors >= 5) {
+          setMessage(`轮询暂时中断：连续 ${consecutiveErrors} 次请求失败，后台任务状态未知，正在继续重试。`);
+          consecutiveErrors = 0;
+        }
       }
     }
   }
 
   async function startAnalysis(mode: "normal" | "aigc") {
-    if (!currentProject || !selectedEpisodeId || busy) return;
-    setScreen("analysis");
+    if (!currentProject || !selectedEpisodeId) {
+      setMessage("请先选择要分析的剧集");
+      return;
+    }
     setBusy(true);
-    setAnalysisProgress({ story: 8, asset: mode === "aigc" ? 12 : 8 });
-    setMessage(mode === "aigc" ? "正在关联 AIGC 资产并分析" : "正在执行普通视频分析");
+    setScreen("analysis");
+    setAnalysisProgress({ story: 4, asset: mode === "aigc" ? 8 : 4 });
+    setMessage(mode === "aigc" ? "正在创建 AIGC 关联分析任务" : "正在创建当前集分析任务");
+    setActiveAnalysisTask({
+      id: "pending-analysis",
+      project_id: currentProject.id,
+      episode_id: selectedEpisodeId,
+      task_type: "asset_extraction",
+      status: "运行中",
+      message: "正在创建当前集分析任务",
+      created_at: "",
+      updated_at: "",
+    });
     try {
       const task = await runBackendTask("asset_extraction");
-      if (!task) return;
+      if (!task) {
+        setMessage("任务创建失败，请重试");
+        setBusy(false);
+        return;
+      }
+      setAnalysisProgress({ story: 8, asset: mode === "aigc" ? 12 : 8 });
+      setMessage(mode === "aigc" ? "正在关联 AIGC 资产并分析" : "正在执行普通视频分析");
       setActiveAnalysisTask(task);
+      sessionStorage.setItem("activeAnalysisTaskId", task.id);
       setBusy(false);
+      pollingTaskIds.current.add(task.id);
       void pollTask(task.id, async (doneTask) => {
+        setActiveAnalysisTask(doneTask);
         if (currentProject) await Promise.all([loadAssets(currentProject.id), loadTasks(currentProject.id)]);
         if (doneTask.status === "失败") {
           setMessage(doneTask.message || "分析失败，请重试");
@@ -820,41 +938,136 @@ export function App() {
           return;
         }
         setAnalysisProgress({ story: 100, asset: 100 });
-        setMessage("分析完成，可以进入设定确认资产");
+        const degraded = doneTask.result?.自动降级;
+        const modelError = doneTask.result?.模型错误;
+        if (degraded) {
+          setMessage("已自动切换 mock 模式：" + (doneTask.result?.降级原因 || "外部服务不可用"));
+        } else if (modelError) {
+          setMessage("方舟分析超时，已先生成基础可编辑资产；可继续进入设定，或稍后重试真实分析：" + String(modelError).slice(0, 80));
+        } else {
+          setMessage("分析完成，可以进入设定确认资产");
+        }
       });
     } catch (error) {
       setBusy(false);
-      setActiveAnalysisTask({ id: "", episode_id: selectedEpisodeId, task_type: "asset_extraction", status: "失败", message: error instanceof Error ? error.message : "任务启动失败", created_at: "", updated_at: "" });
       setMessage(error instanceof Error ? error.message : "任务启动失败");
+    }
+  }
+
+  async function startSeriesAnalysis(mode: "normal" | "aigc" = "normal") {
+    if (!currentProject || !episodes.length) {
+      setMessage("请先上传剧集后再分析整剧");
+      return;
+    }
+    setBusy(true);
+    setScreen("analysis");
+    setAnalysisProgress({ story: 4, asset: mode === "aigc" ? 8 : 4 });
+    setMessage(mode === "aigc" ? "正在创建整剧 AIGC 关联分析任务" : "正在创建整剧分析任务");
+    setActiveAnalysisTask({
+      id: "pending-series-analysis",
+      project_id: currentProject.id,
+      episode_id: null,
+      task_type: "series_analysis",
+      status: "运行中",
+      message: "正在创建整剧分析任务",
+      created_at: "",
+      updated_at: "",
+    });
+    try {
+      const task = await runBackendTask("series_analysis");
+      if (!task) {
+        setMessage("整剧分析任务创建失败，请重试");
+        setBusy(false);
+        return;
+      }
+      setScreen("analysis");
+      setAnalysisProgress({ story: 6, asset: mode === "aigc" ? 10 : 6 });
+      setMessage(mode === "aigc" ? "正在逐集关联 AIGC 资产并分析整剧" : "正在逐集分析整剧，资产将按项目去重");
+      setActiveAnalysisTask(task);
+      setBusy(false);
+      void pollTask(
+        task.id,
+        async (doneTask) => {
+          setActiveAnalysisTask(doneTask);
+          if (currentProject) {
+            await Promise.all([
+              loadAssets(currentProject.id),
+              loadStoryboards(currentProject.id),
+              loadTasks(currentProject.id),
+              selectProject(currentProject.id),
+            ]);
+          }
+          setAnalysisProgress({ story: 100, asset: 100 });
+          if (doneTask.status === "失败") {
+            setMessage(doneTask.message || "整剧分析失败，请重试");
+            return;
+          }
+          const total = doneTask.result?.总集数 ?? episodes.length;
+          const success = doneTask.result?.成功集数 ?? 0;
+          const failed = doneTask.result?.失败集数 ?? 0;
+          setMessage(`整剧分析完成：共 ${total} 集，成功 ${success} 集，失败 ${failed} 集`);
+        },
+        (runningTask) => {
+          const result = runningTask.result ?? {};
+          const total = Number(result.总集数 || episodes.length || 1);
+          const current = Number(result.当前序号 || result.成功集数 || 1);
+          const stage = String(result.当前阶段 || "");
+          const stageOffset = stage.includes("分镜") ? 0.7 : stage.includes("完成") ? 0.95 : stage.includes("资产") ? 0.35 : 0.15;
+          const percent = Math.min(96, Math.max(8, Math.round((((current - 1) + stageOffset) / total) * 92 + 4)));
+          setAnalysisProgress({ story: percent, asset: percent });
+          const episodeLabel = result.当前集 ?? result.当前集编号;
+          if (episodeLabel) {
+            const episodeText = String(episodeLabel).includes("集") ? String(episodeLabel) : `第 ${episodeLabel} 集`;
+            setMessage(`${stage || "正在分析"}${episodeText}（${current}/${total}）`);
+          }
+        }
+      );
+    } catch (error) {
+      setBusy(false);
+      setMessage(error instanceof Error ? error.message : "整剧分析任务启动失败");
     }
   }
 
   async function enterStoryboards() {
     if (!currentProject || busy) return;
     setBusy(true);
+    setStoryboardLoading(true);
     try {
       const task = await runBackendTask("storyboard_generation");
-      if (task) {
-        setScreen("segments");
-        setSegmentPanel("shot-prompt");
-        setMessage("分镜任务已开始，完成后会自动刷新");
+      if (!task) {
+        setStoryboardLoading(false);
+        return;
       }
+      setScreen("segments");
+      setSegmentPanel("shot-prompt");
+      setActiveAnalysisTask(task);
+      setMessage("分镜正在生成，请稍候...");
+      setBusy(false);
+      void pollTask(task.id, async (doneTask) => {
+        if (currentProject) await loadStoryboards(currentProject.id);
+        setStoryboardLoading(false);
+        if (doneTask.status === "失败") {
+          setMessage(doneTask.message || "分镜生成失败，请重试");
+        } else {
+          setMessage("分镜生成完成");
+        }
+      });
     } catch (error) {
+      setStoryboardLoading(false);
       setMessage(error instanceof Error ? error.message : "分镜生成失败");
     } finally {
       setBusy(false);
     }
   }
 
-  async function runVideoGeneration(batch = false) {
+  async function runVideoGeneration() {
     if (!currentProject || busy) return;
     setBusy(true);
     try {
       const task = await runBackendTask("video_generation");
       if (task) {
         setScreen("compare");
-        setVideoPanel(batch ? "video-list" : "video-compare");
-        setMessage(batch ? "批量视频生成任务已开始" : "视频生成任务已开始");
+        setMessage("模拟生成任务已记录；当前没有生成可播放视频");
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "视频生成失败");
@@ -910,23 +1123,165 @@ export function App() {
     }
   }
 
+  async function saveTargetAssetDescription(asset: Asset, description: string) {
+    if (!currentProject) return;
+    const data = await request<{ asset: Asset }>(`/api/projects/${currentProject.id}/assets/${asset.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: { "目标生成描述": description, "目标资产来源": "手动生成" } }),
+    });
+    setAssets((items) => items.map((item) => item.id === asset.id ? data.asset : item));
+    setMessage("目标生成描述已保存；受影响分镜标记为待更新");
+  }
+
+  async function uploadTargetAssetImage(file?: File) {
+    if (!currentProject || !selectedAsset || !file) return;
+    const body = new FormData();
+    body.append("file", file);
+    setBusy(true);
+    try {
+      const data = await request<{ asset: Asset }>(`/api/projects/${currentProject.id}/assets/${selectedAsset.id}/upload-image`, { method: "POST", body });
+      setAssets((items) => items.map((item) => item.id === selectedAsset.id ? data.asset : item));
+      setMessage("目标图已上传、保存并设为当前采用图");
+    } finally { setBusy(false); }
+  }
+
+  async function applyProjectMode() {
+    if (!currentProject) return;
+    const body = { remakeMode, sourceLanguage, storyboardVisualStyle: remakeMode === "cg_3d" ? "cg_3d" : storyboardVisualStyle, replaceCharacters, replaceScenes, targetCountry, targetLanguage };
+    setBusy(true);
+    try {
+      try {
+        const data = await request<{ project: Project }>(`/api/projects/${currentProject.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        setCurrentProject(data.project);
+        setStoryboardVisualStyle(data.project.storyboard_visual_style ?? "live_action");
+        await Promise.all([loadAssets(currentProject.id), loadStoryboards(currentProject.id)]);
+        setMessage("项目制作模式已更新；受影响分镜待更新");
+      } catch (error) {
+        if (!String(error).includes("409")) throw error;
+        const data = await request<{ project: Project }>(`/api/projects/${currentProject.id}/derive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: `${currentProject.title}（新制作模式）`, ...body }) });
+        await loadProjects();
+        await selectProject(data.project.id);
+        setMessage("已另存为新制作项目；源视频、解析与分镜已复用，旧目标图未复制");
+      }
+    } finally { setBusy(false); }
+  }
+
+  async function saveStoryboardVisualStyle(style: "live_action" | "cg_3d") {
+    if (!currentProject) return;
+    const data = await request<{ project: Project }>(`/api/projects/${currentProject.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storyboardVisualStyle: style }) });
+    setStoryboardVisualStyle(data.project.storyboard_visual_style ?? "live_action");
+    setCurrentProject(data.project);
+    await loadStoryboards(currentProject.id);
+    setMessage("分镜画面类型已更新，既有源拆解保留；提示词已标记待更新");
+  }
+
   async function savePrompt(storyboard: Storyboard, prompt: string) {
     if (!currentProject) return;
+    const queueTask = storyboardPatchQueue.current.catch(() => undefined).then(async () => {
+      const data = await request<{ storyboard: Storyboard }>(
+        `/api/projects/${currentProject.id}/storyboards/${storyboard.id}`,
+        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ generatedBody: prompt }) }
+      );
+      setStoryboards((items) => items.map((item) => (item.id === storyboard.id ? data.storyboard : item)));
+    });
+    storyboardPatchQueue.current = queueTask.catch(() => undefined);
+    try {
+      await queueTask;
+      setMessage("提示词已保存");
+    } catch (error) {
+      setMessage(`提示词保存失败，当前编辑保留：${error instanceof Error ? error.message : "请重试"}`);
+    }
+  }
+
+  async function toggleStoryboardAsset(asset: Asset) {
+    if (!currentProject || !selectedStoryboard) return;
+    const payload = { ...(selectedStoryboard.payload ?? {}) };
+    const refs = splitAssetVariableValues(payload["引用资产变量"]);
+    const variable = asset.variable || assetDisplayVariable(asset);
+    const aliases = new Set([asset.variable, assetDisplayVariable(asset), assetDisplayName(asset)]);
+    const wasReferenced = refs.some((item) => aliases.has(item));
+    const nextRefs = wasReferenced ? refs.filter((item) => !aliases.has(item)) : [...refs, variable];
+    const queueTask = storyboardPatchQueue.current.catch(() => undefined).then(async () => {
+      const data = await request<{ storyboard: Storyboard }>(`/api/projects/${currentProject.id}/storyboards/${selectedStoryboard.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payload: { "引用资产变量": nextRefs } }),
+      });
+      setStoryboards((items) => items.map((item) => item.id === data.storyboard.id ? data.storyboard : item));
+    });
+    storyboardPatchQueue.current = queueTask.catch(() => undefined);
+    try {
+      await queueTask;
+      setMessage(wasReferenced ? `已移除引用 ${assetDisplayName(asset)}` : `已引用资产 ${assetDisplayName(asset)}`);
+    } catch (error) {
+      setMessage(`资产引用保存失败：${error instanceof Error ? error.message : "请重试"}`);
+    }
+  }
+
+  async function createStoryboard(duplicateFrom?: Storyboard) {
+    if (!currentProject || !selectedEpisodeId) return;
+    const body = duplicateFrom
+      ? { episodeId: selectedEpisodeId, duplicateFromId: duplicateFrom.id }
+      : {
+          episodeId: selectedEpisodeId,
+          title: `分镜_${String(storyboards.length + 1).padStart(3, "0")}`,
+          timeRange: selectedStoryboard?.time_range ?? "00:00:00-00:00:08",
+        };
+    const data = await request<{ storyboard: Storyboard }>(`/api/projects/${currentProject.id}/storyboards`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    await loadStoryboards(currentProject.id, selectedEpisodeId);
+    setSelectedStoryboardId(data.storyboard.id);
+    setSegmentPanel("shot-prompt");
+    setMessage(duplicateFrom ? "分镜已复制" : "分镜已新增");
+  }
+
+  async function deleteStoryboard(storyboard: Storyboard) {
+    if (!currentProject) return;
+    if (!window.confirm(`确认删除 ${storyboard.title}？关联的生成记录也会移除。`)) return;
+    await request(`/api/projects/${currentProject.id}/storyboards/${storyboard.id}`, { method: "DELETE" });
+    const next = storyboards.find((item) => item.id !== storyboard.id);
+    setSelectedStoryboardId(next?.id ?? null);
+    await loadStoryboards(currentProject.id, selectedEpisodeId);
+    setMessage("分镜已删除");
+  }
+
+  async function moveStoryboard(storyboard: Storyboard, direction: "up" | "down") {
+    if (!currentProject) return;
+    await request<{ storyboard: Storyboard }>(`/api/projects/${currentProject.id}/storyboards/${storyboard.id}/move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ direction }),
+    });
+    await loadStoryboards(currentProject.id, selectedEpisodeId);
+    setSelectedStoryboardId(storyboard.id);
+  }
+
+  async function renameStoryboard(storyboard: Storyboard) {
+    if (!currentProject) return;
+    const title = window.prompt("分镜名称", storyboard.title);
+    if (title === null || !title.trim()) return;
+    const timeRange = window.prompt("时间范围", storyboard.time_range);
+    if (timeRange === null || !timeRange.trim()) return;
     const data = await request<{ storyboard: Storyboard }>(
       `/api/projects/${currentProject.id}/storyboards/${storyboard.id}`,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ title: title.trim(), timeRange: timeRange.trim() }),
       }
     );
     setStoryboards((items) => items.map((item) => (item.id === storyboard.id ? data.storyboard : item)));
-    setMessage("提示词已保存");
+    setSelectedStoryboardId(data.storyboard.id);
+    setMessage("分镜信息已更新");
   }
 
   function updateStoryboardPromptText(value: string) {
     if (!selectedStoryboard) return;
-    setStoryboards((items) => items.map((item) => item.id === selectedStoryboard.id ? { ...item, prompt: value } : item));
+    setStoryboards((items) => items.map((item) => item.id === selectedStoryboard.id
+      ? { ...item, payload: { ...(item.payload ?? {}), "分镜生成正文": value } }
+      : item));
   }
 
   function handlePromptInput(event: ChangeEvent<HTMLTextAreaElement>) {
@@ -960,6 +1315,15 @@ export function App() {
   useEffect(() => {
     loadProjects().catch((error) => setMessage(error.message));
   }, []);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1100px)");
+    const sync = () => {
+      if (media.matches) { setAssetSidebarCollapsed(true); setPreviewPanelCollapsed(true); }
+    };
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     if (assets.length && (!selectedAssetId || !assets.some((asset) => asset.id === selectedAssetId))) {
@@ -968,10 +1332,21 @@ export function App() {
   }, [assets, selectedAssetId]);
 
   useEffect(() => {
+    setTargetAssetDescription(String(selectedAsset?.payload?.["目标生成描述"] ?? ""));
+  }, [selectedAsset?.id, selectedAsset?.payload?.["目标生成描述"]]);
+
+  useEffect(() => {
     if (storyboards.length && (!selectedStoryboardId || !storyboards.some((item) => item.id === selectedStoryboardId))) {
       setSelectedStoryboardId(storyboards[0].id);
     }
   }, [storyboards, selectedStoryboardId]);
+
+  useEffect(() => {
+    if (currentProject && screen === "segments") {
+      setStoryboardLoading(false);
+      loadStoryboards(currentProject.id);
+    }
+  }, [selectedEpisodeId]);
 
   useEffect(() => {
     document.body.dataset.screen = screen;
@@ -979,19 +1354,29 @@ export function App() {
 
   useEffect(() => {
     if (screen !== "analysis" || !isTaskRunning(activeAnalysisTask)) return;
-    const timer = window.setInterval(() => {
-      setAnalysisProgress((current) => ({
-        story: Math.min(current.story + 5, 96),
-        asset: Math.min(current.asset + 4, 96),
-      }));
-    }, 1400);
+    const timer = window.setInterval(() => setAnalysisNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [screen, activeAnalysisTask]);
+  }, [screen, activeAnalysisTask?.id, activeAnalysisTask?.status]);
 
-  const paramSummary = `${frameRatio} · ${resolution} · ${styleType}`;
-  const analysisDone = activeAnalysisTask && !isTaskRunning(activeAnalysisTask) && activeAnalysisTask.status !== "失败";
+  const displayStyleType = remakeMode === "cg_3d" || storyboardVisualStyle === "cg_3d" ? "3DCG 画面" : "真人画面";
+  const paramSummary = `${frameRatio} · ${resolution}`;
+  const analysisFailed = activeAnalysisTask && ["失败", "failed"].includes(activeAnalysisTask.status);
+  const analysisDone = activeAnalysisTask && (analysisFailed || ["成功", "完成", "completed"].includes(activeAnalysisTask.status));
+  const analysisProgressIsIndeterminate = Boolean(isTaskRunning(activeAnalysisTask) && activeAnalysisTask?.task_type !== "series_analysis");
+  const analysisElapsedSeconds = activeAnalysisTask?.created_at
+    ? Math.max(0, Math.floor((analysisNow - new Date(activeAnalysisTask.created_at).getTime()) / 1000))
+    : 0;
+  const analysisIsDegraded =
+    analysisDone && !analysisFailed &&
+    (Boolean(activeAnalysisTask?.result?.自动降级) || Boolean(activeAnalysisTask?.result?.模型错误));
+  const analysisWarning =
+    activeAnalysisTask?.result?.降级原因
+    || (activeAnalysisTask?.result?.模型错误 ? "方舟分析超时，当前为基础可编辑资产：" + String(activeAnalysisTask.result.模型错误).slice(0, 120) : null);
   const selectedAssetGeneratedImage = selectedAssetImageUrl(selectedAsset);
   const selectedAssetOriginalImage = originalAssetImageUrl(selectedAsset);
+  const selectedAssetCurrentImage = selectedAsset?.payload?.effectiveAssetSource === "source"
+    ? selectedAssetOriginalImage
+    : selectedAssetGeneratedImage;
   const selectedImageVersion = selectedAssetImage(selectedAsset);
   const isGeneratingSelectedAsset = Boolean(selectedAsset && generatingAssetId === selectedAsset.id);
 
@@ -1002,8 +1387,8 @@ export function App() {
           <button className="back-btn" onClick={() => setScreen("home")}>‹</button>
           <div className="home-brand">视频重制工坊</div>
           <div className="project-copy">
-            <div className="project-title">{currentProject?.title ?? "未命名项目"} <span>✎</span></div>
-            <div className="project-meta">{frameRatio}　｜　{resolution}　｜　{styleType}　｜　目标语言：{currentProject?.target_language ?? "英语"}</div>
+          <div className="project-title" onClick={async () => { if (!currentProject) return; const title = window.prompt("项目名称", currentProject.title); if (title === null || !title.trim()) return; const data = await request<{ project: Project }>(`/api/projects/${currentProject.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: title.trim() }) }); setCurrentProject(data.project); await loadProjects(); }}>{currentProject?.title ?? "未命名项目"} <span>✎</span></div>
+          <div className="project-meta">{frameRatio}　｜　{resolution}</div>
           </div>
         </div>
         <nav className="steps">
@@ -1018,24 +1403,14 @@ export function App() {
             </button>
           ))}
         </nav>
-        <div className="top-actions">
-          <button className="ghost" onClick={() => {
-            setScreen("compare");
-            setVideoPanel("video-export");
-          }}>导出</button>
-          <button className="coin">✦ {assets.length + storyboards.length + generations.length}</button>
-        </div>
       </header>
 
       <main>
         <section className={screen === "home" ? "screen active home-screen" : "screen home-screen"} id="home">
           <div className="upload-card">
-            <div className="upload-tabs">
-              <button className={sourceMode === "local" ? "active" : ""} onClick={() => setSourceMode("local")}>上传本地视频</button>
-              <button className={sourceMode === "backend" ? "active" : ""} onClick={() => setSourceMode("backend")}>拉取后台视频项目</button>
-            </div>
+            <div className="upload-heading">上传本地视频</div>
 
-            {!selectedSource && sourceMode === "local" && (
+            {!selectedSource && (
               <section className="source-empty">
                 <div className="drop-icon">▣</div>
                 <b>上传本地视频</b>
@@ -1047,21 +1422,10 @@ export function App() {
               </section>
             )}
 
-            {!selectedSource && sourceMode === "backend" && (
-              <section className="source-empty">
-                <div className="drop-icon">▣</div>
-                <b>拉取后台视频项目</b>
-                <span>从公司视频管理系统选择待重制项目。确认项目后再开始上传。</span>
-                <div className="empty-actions">
-                  <button className="primary" onClick={() => setModal("backend-project-modal")}>选择后台项目</button>
-                </div>
-              </section>
-            )}
-
             {selectedSource && (
               <section className="selected-source">
                 <div>
-                  <span>{selectedSource.kind === "local" ? "本地视频" : selectedSource.backendType === "ai" ? "后台项目 · AI 剧" : "后台项目 · 真人剧"}</span>
+                  <span>本地视频</span>
                   <b>{selectedSource.title}</b>
                   <small>{selectedSource.meta}</small>
                 </div>
@@ -1073,48 +1437,57 @@ export function App() {
               </section>
             )}
 
-            {uploadState === "uploaded" && (
+            {effectiveUploadState === "uploaded" && (
               <section className="source-summary">
                 <article><span>文件夹名称</span><b>{selectedSource?.title ?? currentProject?.title ?? "未选择"}</b></article>
                 <article><span>总集数</span><b>{episodes.length || sourceEpisodeCount} 集</b></article>
-                <article><span>上传状态</span><b>{episodes.length || sourceEpisodeCount}/{episodes.length || sourceEpisodeCount} 已完成</b></article>
+                <article><span>上传状态</span><b>{uploadedEpisodeCount || episodes.length || sourceEpisodeCount}/{episodes.length || sourceEpisodeCount} 已完成</b></article>
               </section>
             )}
 
             <div className="config-row">
-              <label className="select-field">目标国家<select value={targetCountry} onChange={(event) => setTargetCountry(event.target.value)}><option>美国</option><option>英国</option><option>日本</option><option>韩国</option></select></label>
+              <label className="select-field">画面类型<select value={storyboardVisualStyle ?? "live_action"} onChange={(event) => { const style = event.target.value as "live_action" | "cg_3d"; setStoryboardVisualStyle(style); setRemakeMode(style === "cg_3d" ? "cg_3d" : targetLanguage === "沿用原片语言" ? "asset_replacement" : "overseas_localization"); }}><option value="live_action">真人</option><option value="cg_3d">3D</option></select></label>
+              <label className="select-field">地区语言<select value={targetLanguage} onChange={(event) => { const language = event.target.value; setTargetLanguage(language); setTargetCountry(language === "沿用原片语言" ? "中国" : language === "日语" ? "日本" : language === "韩语" ? "韩国" : language === "英语" ? "美国" : "海外"); setRemakeMode(storyboardVisualStyle === "cg_3d" ? "cg_3d" : language === "沿用原片语言" ? "asset_replacement" : "overseas_localization"); setReplaceCharacters(language === "沿用原片语言"); setReplaceScenes(language === "沿用原片语言"); }}><option value="沿用原片语言">国内（原片语言）</option><option value="英语">海外·英语</option><option value="日语">海外·日语</option><option value="韩语">海外·韩语</option><option value="西班牙语">海外·西班牙语</option><option value="法语">海外·法语</option></select></label>
               <div className="spacer"></div>
               <details className="param-sheet">
                 <summary>生成参数 <b>{paramSummary}</b></summary>
                 <div className="param-popover">
                   <div className="param-row"><span>画幅</span><div className="param-options">{["16:9", "9:16", "1:1"].map((item) => <button className={frameRatio === item ? "active" : ""} key={item} onClick={() => setFrameRatio(item)}>{item}</button>)}</div></div>
                   <div className="param-row"><span>清晰度</span><div className="param-options">{["480p", "720p", "1080p"].map((item) => <button className={resolution === item ? "active" : ""} key={item} onClick={() => setResolution(item)}>{item}</button>)}</div></div>
-                  <div className="param-row"><span>风格</span><div className="param-options">{["写实通用", "欧美短剧", "广告质感"].map((item) => <button className={styleType === item ? "active" : ""} key={item} onClick={() => setStyleType(item)}>{item}</button>)}</div></div>
+                  {remakeMode === "overseas_localization" && <div className="param-row"><span>风格</span><div className="param-options">{["写实通用", "欧美短剧", "广告质感"].map((item) => <button className={styleType === item ? "active" : ""} key={item} onClick={() => setStyleType(item)}>{item}</button>)}</div></div>}
                 </div>
               </details>
+              {currentProject && <button className="ghost" disabled={busy} onClick={applyProjectMode}>应用项目模式</button>}
               <button className="create-btn in-card" disabled={busy || !selectedSource} onClick={() => setModal("upload-confirm-modal")}>开始上传</button>
             </div>
 
-            <input hidden multiple type="file" accept="video/*" ref={fileInputRef} onChange={(event: ChangeEvent<HTMLInputElement>) => handleLocalFiles(event.target.files, "single")} />
-            <input hidden multiple type="file" accept="video/*" ref={folderInputRef} {...{ webkitdirectory: "" }} onChange={(event: ChangeEvent<HTMLInputElement>) => handleLocalFiles(event.target.files, "folder")} />
+            <input hidden multiple type="file" accept="video/*" ref={fileInputRef} onChange={(event: ChangeEvent<HTMLInputElement>) => {
+              handleLocalFiles(event.target.files, "single");
+              event.currentTarget.value = "";
+            }} />
+            <input hidden multiple type="file" accept="video/*" ref={folderInputRef} {...{ webkitdirectory: "" }} onChange={(event: ChangeEvent<HTMLInputElement>) => {
+              handleLocalFiles(event.target.files, "folder");
+              event.currentTarget.value = "";
+            }} />
           </div>
 
           <section className="project-library">
             <div className="library-head">
               <div><h2>项目管理</h2><span>过往重绘项目</span></div>
-              <div className="library-actions"><button className="ghost" onClick={createProject}>新建项目</button><button className="ghost" onClick={() => currentProject && selectProject(currentProject.id)}>最近更新</button></div>
+              <div className="library-actions"><button className="ghost" onClick={createProject}>新建项目</button><button className="ghost" onClick={() => currentProject && selectProject(currentProject.id)}>刷新当前项目</button></div>
             </div>
             <div className="project-grid">
               {projects.slice(0, 4).map((project, index) => (
                 <article className="project-card" key={project.id} onClick={() => {
                   void selectProject(project.id);
-                  setScreen(index % 2 === 0 ? "source" : "assets");
+                  setScreen("source");
                 }}>
                   <div className={`project-cover cover-${["a", "b", "c", "d"][index % 4]}`}></div>
                   <div className="project-info">
-                    <span>{project.status}</span>
+                  <span>{project.status}</span>
+                  <span className="project-mode-tag">{project.remake_mode === "cg_3d" ? "3DCG 风格" : project.remake_mode === "asset_replacement" ? "替换角色/场景" : "海外本土化"}</span>
                     <b>{project.title}</b>
-                    <small>{project.target_country} · {project.target_language} · {project.id}</small>
+                  <small>{project.remake_mode === "overseas_localization" ? `${project.target_country} · ${project.target_language}` : `源语言：${project.source_language || "待确认"}`} · {project.id}</small>
                   </div>
                 </article>
               ))}
@@ -1124,11 +1497,11 @@ export function App() {
 
         <section className={screen === "source" ? "screen active page-screen" : "screen page-screen"} id="source">
           <div className="info-bar">
-            {uploadState === "uploading" ? `正在上传《${selectedSource?.title ?? currentProject?.title ?? "当前项目"}》原片视频。上传完成后，再选择分析方式。` : uploadState === "failed" ? "上传失败，请返回重新选择或重试上传。" : "原片视频已上传完成，现在可以选择分析方式。"}
+            {effectiveUploadState === "uploading" ? `正在上传《${selectedSource?.title ?? currentProject?.title ?? "当前项目"}》原片视频。上传完成后，再选择分析方式。` : effectiveUploadState === "failed" ? "上传失败，请返回重新选择或重试上传。" : "原片视频已上传完成，现在可以选择分析方式。"}
           </div>
           <div className="page-head">
             <h1>原片剧集</h1>
-            <div>全部 {episodes.length || sourceEpisodeCount}　已上传 {uploadState === "uploaded" ? episodes.length || sourceEpisodeCount : 0}　上传中 {uploadState === "uploading" ? sourceEpisodeCount : 0}　失败 {uploadState === "failed" ? 1 : 0}</div>
+            <div>全部 {episodes.length || sourceEpisodeCount}　已上传 {uploadedEpisodeCount || (effectiveUploadState === "uploaded" ? episodes.length || sourceEpisodeCount : 0)}　上传中 {uploadingEpisodeCount}　失败 {failedEpisodeCount}</div>
           </div>
           <div className="table-card">
             <table>
@@ -1139,7 +1512,7 @@ export function App() {
                   episode_index: index + 1,
                   filename: selectedFiles?.[index]?.name ?? `${String(index + 1).padStart(3, "0")}.mp4`,
                   size_bytes: selectedFiles?.[index]?.size ?? 0,
-                  status: uploadState,
+                  status: effectiveUploadState,
                   source_url: "",
                   ark_file_id: "",
                   ark_file_status: "",
@@ -1150,26 +1523,25 @@ export function App() {
                     <td><b>第 {episode.episode_index} 集</b><span>{episode.filename}</span></td>
                     <td>--:--</td>
                     <td>{formatBytes(episode.size_bytes)}</td>
-                    <td><i className={`dot ${uploadState === "failed" ? "red" : uploadState === "uploaded" || episode.status === "已上传" || episode.ark_file_id ? "green" : "blue"}`}></i><span>{uploadState === "uploading" ? "上传中" : uploadState === "uploaded" || episode.ark_file_id ? "上传成功" : uploadState === "failed" ? "上传失败" : "等待上传"}</span></td>
-                    <td>{episode.id.startsWith("pending") ? <a>暂停</a> : <><a onClick={() => syncArkFile(episode.id)}>同步 Ark</a><a className="danger">删除</a></>}</td>
+                    <td><i className={`dot ${episode.ark_file_id || episode.status.includes("已上传") ? "green" : effectiveUploadState === "failed" ? "red" : "blue"}`}></i><span>{episode.ark_file_id || episode.status.includes("已上传") ? "上传成功" : effectiveUploadState === "uploading" ? "上传中" : effectiveUploadState === "failed" ? "上传失败" : "等待上传"}</span></td>
+                    <td>{episode.id.startsWith("pending") ? <span>待上传</span> : <a onClick={() => syncArkFile(episode.id)}>同步 Ark</a>}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          {uploadState === "uploaded" && (
+          {effectiveUploadState === "uploaded" && (
             <section className="analysis-choice source-analysis-choice">
               <div>
                 <b>选择分析方式</b>
-                <span>{canUseAigc ? "该后台项目为 AI 剧，上传完成后可关联 AIGC 资产资料，也可以选择普通分析。" : "当前素材无可复用 AIGC 资产，上传完成后走普通视频分析。"}</span>
+                <span>本地视频将通过抽帧与视觉理解进行普通分析。</span>
               </div>
               <div className="analysis-actions">
-                <button className="primary" disabled={busy} onClick={() => selectedEpisodeId ? startAnalysis("normal") : setMessage("后台项目当前是演示链路；真实分析需要先上传一个本地视频生成剧集记录")}>普通分析</button>
-                <button className={canUseAigc ? "primary" : "ghost disabled"} disabled={busy || !canUseAigc} onClick={() => startAnalysis("aigc")}>关联 AIGC 资产并分析</button>
+                <button className="primary" disabled={!selectedEpisodeId} onClick={() => selectedEpisodeId ? startAnalysis("normal") : setMessage("后台项目当前是演示链路；真实分析需要先上传一个本地视频生成剧集记录")}>分析当前集</button>
+                <button className="primary" disabled={!episodes.length} onClick={() => startSeriesAnalysis("normal")}>分析全部剧集</button>
               </div>
             </section>
           )}
-          <div className="locked-rule">当前只展示上传状态。分析状态会在点击分析方式后进入独立 loading 页面展示。</div>
           <div className="footer-actions">
             <button className="ghost" onClick={() => setScreen("home")}>返回</button>
           </div>
@@ -1177,25 +1549,44 @@ export function App() {
 
         <section className={screen === "analysis" ? "screen active page-screen analysis-screen" : "screen page-screen analysis-screen"} id="analysis">
           <div className="analysis-loading-card">
-            <div className="loader-ring"></div>
-            <h1>正在分析视频资源</h1>
-            <p>{activeAnalysisTask?.status === "失败" ? activeAnalysisTask.message : message}</p>
-            <div className="analysis-progress-list">
-              <article>
-                <div className="analysis-head"><b>剧情解析转化进度</b><span>{analysisProgress.story}%</span></div>
-                <div className="progress"><i style={{ width: `${analysisProgress.story}%` }}></i></div>
-                <small>识别剧情段落、台词、镜头节奏，并转化为目标国家分镜基础描述。</small>
-              </article>
-              <article>
-                <div className="analysis-head"><b>资产解析转化进度</b><span>{analysisProgress.asset}%</span></div>
-                <div className="progress"><i style={{ width: `${analysisProgress.asset}%` }}></i></div>
-                <small>{canUseAigc ? "优先复用 AIGC 平台中的原资产图和原资产描述，未命中的内容再通过视频分析补齐。" : "通过视频抽帧和视觉理解分析角色、场景、道具与画面文字。"}</small>
-              </article>
-            </div>
-            <button className={analysisDone ? "primary" : "primary disabled"} disabled={!analysisDone} onClick={() => {
-              setScreen("assets");
-              showAssetOverview("角色");
-            }}>进入设定</button>
+            {analysisFailed ? (
+              <>
+                <div className="analysis-failed-icon">✕</div>
+                <h1>分析失败</h1>
+                <p className="analysis-error-message">{activeAnalysisTask?.message || "分析过程中发生错误"}</p>
+                <div className="analysis-failed-actions">
+                  <button className="ghost" onClick={() => setScreen("source")}>返回上传页</button>
+                  <button className="primary" onClick={() => startAnalysis("normal")}>重试分析</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="loader-ring"></div>
+                <h1>正在分析视频资源</h1>
+                <p>{message}{isTaskRunning(activeAnalysisTask) && activeAnalysisTask?.task_type !== "series_analysis" && (
+                  <small className="analysis-elapsed">已用时 {Math.floor(analysisElapsedSeconds / 60)} 分 {analysisElapsedSeconds % 60} 秒</small>
+                )}</p>
+                <div className="analysis-progress-list">
+                  <article>
+                    <div className="analysis-head"><b>剧情解析转化进度</b><span>{analysisProgressIsIndeterminate ? "处理中" : `${analysisProgress.story}%`}</span></div>
+                    <div className={analysisProgressIsIndeterminate ? "progress indeterminate" : "progress"}><i style={analysisProgressIsIndeterminate ? undefined : { width: `${analysisProgress.story}%` }}></i></div>
+                    <small>识别剧情段落、台词、镜头节奏，并转化为目标国家分镜基础描述。</small>
+                  </article>
+                  <article>
+                    <div className="analysis-head"><b>资产解析转化进度</b><span>{analysisProgressIsIndeterminate ? "处理中" : `${analysisProgress.asset}%`}</span></div>
+                    <div className={analysisProgressIsIndeterminate ? "progress indeterminate" : "progress"}><i style={analysisProgressIsIndeterminate ? undefined : { width: `${analysisProgress.asset}%` }}></i></div>
+                    <small>通过视频抽帧和视觉理解分析角色、场景、道具与画面文字。</small>
+                  </article>
+                </div>
+                <button className={analysisDone ? "primary" : "primary disabled"} disabled={!analysisDone} onClick={() => {
+                  setScreen("assets");
+                  showAssetOverview("角色");
+                }}>进入设定</button>
+                {!analysisDone && (
+                  <button className="ghost" style={{ marginTop: 12 }} onClick={() => { sessionStorage.removeItem("activeAnalysisTaskId"); setScreen("source"); }}>取消并返回</button>
+                )}
+              </>
+            )}
           </div>
         </section>
 
@@ -1205,23 +1596,27 @@ export function App() {
             <div>角色 {roleCount} / 子资产 {roleCount}　场景 {sceneCount} / 子资产 {sceneCount}　道具 {propCount}</div>
           </div>
           <div className="module-tabs">
-            {(["角色", "场景", "道具", "批量送审"] as AssetTab[]).map((tab) => (
+            {(["角色", "场景", "道具", "资产进度"] as AssetTab[]).map((tab) => (
               <button className={assetTab === tab ? "active" : ""} key={tab} onClick={() => showAssetOverview(tab)}>{tab}</button>
             ))}
           </div>
 
+          {analysisIsDegraded && assetView !== "detail" && (
+            <div className="degradation-banner">
+              <span>⚠ {analysisWarning || "当前资产和分镜使用回退测试数据，不具备真实模型分析结果。"}</span>
+            </div>
+          )}
           {assetView !== "detail" && (
             <div className="asset-overview sub-panel active">
               <div className="overview-head">
-                <h2>{assetTab === "批量送审" ? "资产确认清单" : `${assetTab}资产占位符`}</h2>
-                <div><button className="ghost" onClick={() => selectedEpisodeId && startAnalysis("normal")} disabled={busy || !selectedEpisodeId}>重新提取</button><button className="ghost" disabled={busy || !assets.length}>批量生成图片</button></div>
+                <h2>{assetTab === "资产进度" ? "资产进度" : `${assetTab}资产`}</h2>
+                <div><button className="ghost" onClick={() => selectedEpisodeId && startAnalysis("normal")} disabled={busy || !selectedEpisodeId}>重提当前集</button><button className="ghost" onClick={() => startSeriesAnalysis("normal")} disabled={busy || !episodes.length}>重提整剧</button></div>
               </div>
-              {assetTab === "批量送审" ? (
+              {assetTab === "资产进度" ? (
                 <div className="sub-panel simple-panel active">
-                  <div className="metric"><b>待生成</b><span>{assets.filter((asset) => asset.status !== "已确认").length} 个子资产</span></div>
+                  <div className="metric"><b>待确认</b><span>{assets.filter((asset) => asset.status !== "已确认").length} 个资产</span></div>
                   <div className="metric"><b>已确认</b><span>{assets.filter((asset) => asset.status === "已确认").length} 个子资产</span></div>
-                  <div className="metric"><b>待生成视频</b><span>{storyboards.filter((item) => item.status !== "已生成").length} 个分镜</span></div>
-                  <div className="review-rule">未生成目标资产图的子资产可以先保留占位，但进入分镜时会提醒用户完善资产生成。</div>
+                  <div className="review-rule">确认资产后，可在分镜中检查并引用；未完成的目标资产会保留待确认状态。</div>
                 </div>
               ) : (
                 <div className="asset-grid overview-grid">
@@ -1258,7 +1653,7 @@ export function App() {
                           </figure>
                         </div>
                         <b>{group.name} → {group.localizedName}</b>
-                        <span>{group.items.length} 个子资产</span>
+                        <span>{group.items.length} 个子资产 · {assetDisplayMeta(group.items[0])}</span>
                       </article>
                     );
                   })}
@@ -1278,6 +1673,7 @@ export function App() {
                 <section className="asset-source-panel">
                   <div className="asset-detail-summary">
                     <article><span>资产变量</span><b>{assetDisplayVariable(selectedAsset)}</b></article>
+                    <article><span>出现集数</span><b>{Array.isArray(selectedAsset.payload?.出现集数) && selectedAsset.payload.出现集数.length ? `第 ${selectedAsset.payload.出现集数.join("、")} 集` : "当前集"}</b></article>
                     <article><span>剧情身份/功能</span><b>{pickText(selectedAsset.payload, ["剧情身份", "剧情功能"]) || "来自原片分析"}</b></article>
                     <article><span>当前状态</span><b>{selectedAsset.status}</b></article>
                   </div>
@@ -1285,7 +1681,9 @@ export function App() {
                   <div className="subasset-list compact-subasset-list">
                     {(selectedGroup?.items ?? [selectedAsset]).map((item) => (
                       <article className={item.id === selectedAsset.id ? "subasset-card active" : "subasset-card"} key={item.id} onClick={() => setSelectedAssetId(item.id)}>
-                        <div className="subasset-thumb-shell"><div className={`thumb ${assetThumbClass(item)}`}></div><div className="subasset-inline-actions"><button>删除子资产</button><button>设为主资产</button></div></div>
+                        <div className="subasset-thumb-shell">{selectedAssetImageUrl(item) || originalAssetImageUrl(item)
+                          ? <img className="subasset-thumb" src={selectedAssetImageUrl(item) || originalAssetImageUrl(item) || ""} alt={`${variantName(item)}资产图`} />
+                          : <span className="asset-empty-thumb">暂无图片</span>}</div>
                         <b>{variantName(item)}</b>
                         <span>{variantMeta(item) || assetDisplayVariable(item)}</span>
                       </article>
@@ -1296,49 +1694,51 @@ export function App() {
                       {selectedAssetOriginalImage ? (
                         <img className="original-asset-image clickable-image" src={selectedAssetOriginalImage} alt="原资产图" onClick={() => openImage(selectedAssetOriginalImage, `${selectedAsset.name} 原资产图`)} />
                       ) : (
-                        <div className={`thumb ${assetThumbClass(selectedAsset)}`}></div>
+                        <div className="asset-empty-thumb asset-empty-large">暂无原资产图</div>
                       )}
                       <b>原资产图</b>
-                      <span>来自原片分析</span>
+                      <span>源资产事实只读</span>
                       <p>{originalAssetDescription(selectedAsset)}</p>
                     </article>
                     <article>
                       {isGeneratingSelectedAsset ? (
                         <div className="generated-image-loading"><i></i><span>生成中</span></div>
-                      ) : selectedAssetGeneratedImage ? (
-                        <img className="generated-asset-image clickable-image" src={selectedAssetGeneratedImage} alt="目标资产图" onClick={() => openImage(selectedAssetGeneratedImage, `${selectedAsset.localized_name} 目标资产图`)} />
+                      ) : selectedAssetCurrentImage ? (
+                        <img className="generated-asset-image clickable-image" src={selectedAssetCurrentImage} alt={selectedAsset?.payload?.effectiveAssetSource === "source" ? "当前沿用的原片资产图" : "目标资产图"} onClick={() => openImage(selectedAssetCurrentImage, `${selectedAsset.localized_name} 当前生效资产图`)} />
                       ) : (
                         <div className={`asset-placeholder ${assetThumbClass(selectedAsset)}`}>目标资产图</div>
                       )}
-                      <b>目标国家资产</b>
-                      <span>生成后可送审</span>
-                      <p>{localizedAssetDescription(selectedAsset)}</p>
+                      <b>{selectedAsset?.payload?.effectiveAssetSource === "source" ? "当前沿用原片资产" : "当前目标资产"}</b>
+                      <span>{selectedAsset?.payload?.effectiveAssetSource === "source"
+                        ? (selectedAssetCurrentImage ? "原片资产图 · 当前生效" : "缺少原片资产图")
+                        : selectedImageVersion?.payload?.source === "user_upload" ? "用户上传 · 当前采用图" : selectedAssetGeneratedImage ? "当前采用图决定目标外观" : "缺少已确认目标图 · 替换未就绪"}</span>
+                      <p>{selectedAsset?.payload?.effectiveAssetSource === "source"
+                        ? (selectedAsset?.payload?.当前有效资产就绪 === false
+                          ? `原片资产未就绪：缺少原片图或原片描述。${selectedAsset.payload?.当前有效外观描述 || ""}`
+                          : `已关联原分镜，当前沿用原片外观：${selectedAsset.payload?.当前有效外观描述 || "原片描述未留存"}`)
+                        : selectedAsset?.payload?.当前有效资产就绪 === false
+                          ? "替换目标未就绪，请上传或生成并采用目标图。"
+                          : "已关联原分镜，外观以当前目标图为准。"}</p>
                     </article>
                   </div>
                 </section>
                 <aside className="generation-panel asset-generation-studio">
                   <div className="studio-toolbar">
-                    <div className="studio-title"><b>{variantName(selectedAsset)}</b><button>编辑</button></div>
-                    <button className="studio-add">+ 添加变体</button>
-                    <div className="studio-icon-actions"><button title="收藏">☆</button><button title="下载">↓</button><button title="删除">删</button></div>
-                    <button className="primary studio-confirm" onClick={() => confirmAsset(selectedAsset.id)} disabled={busy}>确认{assetTab}</button>
+                    <div className="studio-title"><b>{variantName(selectedAsset)}</b></div>
                   </div>
                   <div className="studio-preview-row">
                     <div className="studio-preview-main">
                       {isGeneratingSelectedAsset ? (
                         <div className="studio-image-loading"><i></i><span>生成中</span></div>
-                      ) : selectedAssetGeneratedImage ? (
-                        <img className="studio-generated-image clickable-image" src={selectedAssetGeneratedImage} alt="当前目标资产图" onClick={() => openImage(selectedAssetGeneratedImage, `${variantName(selectedAsset)} 当前采用图`)} />
+                      ) : selectedAssetCurrentImage ? (
+                        <img className="studio-generated-image clickable-image" src={selectedAssetCurrentImage} alt={selectedAsset?.payload?.effectiveAssetSource === "source" ? "当前沿用的原片资产图" : "当前目标资产图"} onClick={() => openImage(selectedAssetCurrentImage, `${variantName(selectedAsset)} 当前生效资产图`)} />
                       ) : (
-                        <>
-                          <div className={`studio-portrait ${assetThumbClass(selectedAsset)}`}></div>
-                          <div className={`studio-turnaround ${assetThumbClass(selectedAsset)}`}></div>
-                        </>
+                          <div className="asset-empty-thumb asset-empty-large">暂无当前采用图</div>
                       )}
                     </div>
                     <div className="studio-current">
                       <span>当前</span>
-                      <div className="studio-current-thumb" onClick={() => selectedAssetGeneratedImage && openImage(selectedAssetGeneratedImage, "当前采用图")}>{isGeneratingSelectedAsset ? <i className="current-loading"></i> : selectedAssetGeneratedImage ? <img src={selectedAssetGeneratedImage} alt="当前采用图" /> : <><i></i><i></i></>}</div>
+                      <div className="studio-current-thumb" onClick={() => selectedAssetCurrentImage && openImage(selectedAssetCurrentImage, "当前生效资产图")}>{isGeneratingSelectedAsset ? <i className="current-loading"></i> : selectedAssetCurrentImage ? <img src={selectedAssetCurrentImage} alt="当前生效资产图" /> : <><i></i><i></i></>}</div>
                       <div className="asset-version-list">
                         {(selectedAsset.images ?? []).map((image, index) => {
                           const imageUrl = apiAssetUrl(image.file_url || image.payload?.source_url);
@@ -1354,13 +1754,17 @@ export function App() {
                     </div>
                   </div>
                   <div className="agent-generate-card">
-                    <div className="agent-card-head"><h3>Agent 生成{assetTab === "角色" ? "形象" : assetTab}</h3><div><button>从角色库选择</button><button>本地上传</button></div></div>
+                    <div className="agent-card-head"><h3>Agent 生成{assetTab === "角色" ? "形象" : assetTab}</h3></div>
                     <div className="agent-prompt-box">
-                      <button className="add-reference">+</button>
+                      {currentProject?.remake_mode !== "overseas_localization" && <div className="asset-target-controls">
+                        <label>目标生成描述（可编辑）<textarea value={targetAssetDescription} onChange={(event) => setTargetAssetDescription(event.target.value)} onBlur={() => saveTargetAssetDescription(selectedAsset, targetAssetDescription).catch((error) => setMessage(error.message))} placeholder={originalAssetDescription(selectedAsset) === "原片描述未留存" ? "请补充目标外观描述" : "只编辑当前项目目标外观"} /></label>
+                        <div><button className="ghost" onClick={() => assetImageInputRef.current?.click()} disabled={busy}>上传目标图</button>{currentProject?.remake_mode === "asset_replacement" && <button className="ghost" onClick={async () => { const data = await request<{ asset: Asset }>(`/api/projects/${currentProject.id}/assets/${selectedAsset.id}/restore-original`, { method: "POST" }); setAssets((items) => items.map((item) => item.id === selectedAsset.id ? data.asset : item)); setTargetAssetDescription(""); setMessage("已设为沿用原貌；受影响分镜待更新"); }}>沿用原貌</button>}</div>
+                        <input ref={assetImageInputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.currentTarget.files?.[0]; void uploadTargetAssetImage(file).catch((error) => setMessage(error.message)); event.currentTarget.value = ""; }} />
+                      </div>}
                       <textarea value={assetPrompt(selectedAsset) || "当前资产未返回提示词"} readOnly />
                       <div className="agent-prompt-footer">
-                        <div className="agent-selects"><button>Doubao-Seedream-5.0-lite</button><button>1张</button></div>
-                        <button className="primary agent-cost" onClick={() => generateAssetImage(selectedAsset.id)} disabled={busy}>生成</button>
+                        <div className="agent-model-note">按当前后端模型配置生成</div>
+                        <button className="primary agent-cost" onClick={() => generateAssetImage(selectedAsset.id, currentProject?.remake_mode === "overseas_localization" ? undefined : targetAssetDescription)} disabled={busy || (currentProject?.remake_mode !== "overseas_localization" && !targetAssetDescription.trim())}>生成</button>
                       </div>
                     </div>
                   </div>
@@ -1375,8 +1779,8 @@ export function App() {
           </div>
         </section>
 
-        <section className={screen === "segments" ? "screen active workbench" : "screen workbench"} id="segments">
-          <section className="asset-sidebar">
+        <section className={`screen workbench${screen === "segments" ? " active" : ""}${assetSidebarCollapsed ? " assets-collapsed" : ""}${previewPanelCollapsed ? " preview-collapsed" : ""}`} id="segments">
+          <section className={`asset-sidebar${assetSidebarCollapsed ? " folded" : ""}`}>
             <details className="episode-select">
               <summary><b>{selectedEpisode ? `第 ${selectedEpisode.episode_index} 集` : "选择剧集"}</b><span>{episodes.length} 集已解析</span></summary>
               <div className="episode-menu">
@@ -1385,61 +1789,52 @@ export function App() {
                 ))}
               </div>
             </details>
-            <div className="inner-tabs compact-asset-tabs">
-              <button className={shotSidepanel === "shot-asset-overview" ? "active" : ""} onClick={() => setShotSidepanel("shot-asset-overview")}>全部</button>
-              <button>角色</button><button>场景</button><button>道具</button>
-              <button className={shotSidepanel === "shot-frame" ? "active" : ""} onClick={() => setShotSidepanel("shot-frame")}>参考帧</button>
+            <div className="inner-tabs compact-asset-tabs"><span className="sidepanel-label">资产库 · 点击引用到当前分镜</span></div>
+            <input className="storyboard-asset-search" placeholder="搜索角色、场景、道具" value={storyboardAssetSearch} onChange={(event) => setStoryboardAssetSearch(event.target.value)} />
+            <div className="storyboard-asset-view-controls"><span>显示</span><button className={storyboardAssetLayout === "list" ? "active" : ""} onClick={() => setStoryboardAssetLayout("list")}>列表</button><button className={storyboardAssetLayout === "grid" ? "active" : ""} onClick={() => setStoryboardAssetLayout("grid")}>网格</button></div>
+            <div className={`asset-panel active storyboard-asset-list ${storyboardAssetLayout}`}>
+              {["角色", "场景", "道具"].map((type) => <div className="storyboard-asset-group" key={type}>
+                <button className="storyboard-asset-group-toggle" aria-expanded={!collapsedStoryboardAssetGroups.includes(type)} onClick={() => setCollapsedStoryboardAssetGroups((groups) => groups.includes(type) ? groups.filter((item) => item !== type) : [...groups, type])}>{type} <small>{assets.filter((asset) => asset.asset_type === type && `${assetDisplayName(asset)} ${assetDisplayVariable(asset)}`.toLowerCase().includes(storyboardAssetSearch.toLowerCase())).length}</small><span>{collapsedStoryboardAssetGroups.includes(type) ? "＋" : "−"}</span></button>
+                {!collapsedStoryboardAssetGroups.includes(type) && <div className="storyboard-asset-group-items">
+                {assets.filter((asset) => asset.asset_type === type && `${assetDisplayName(asset)} ${assetDisplayVariable(asset)}`.toLowerCase().includes(storyboardAssetSearch.toLowerCase())).map((asset) => {
+                  const thumbUrl = selectedAssetImageUrl(asset) || originalAssetImageUrl(asset);
+                  const refs = splitAssetVariableValues(selectedStoryboard?.payload?.["引用资产变量"]);
+                  const aliases = [asset.variable, assetDisplayVariable(asset), assetDisplayName(asset)];
+                  const isReferenced = aliases.some((alias) => refs.includes(alias)) || selectedStoryboardAssets.some((item) => item.id === asset.id);
+                  return <button className={isReferenced ? "storyboard-asset-row referenced" : "storyboard-asset-row"} key={asset.id} disabled={!selectedStoryboard} onClick={() => toggleStoryboardAsset(asset)}>
+                    {thumbUrl ? <img src={thumbUrl} alt="" /> : <span className="asset-empty-thumb">—</span>}<span><b>{assetDisplayName(asset)}</b><small>{assetDisplayVariable(asset)}</small></span><i>{isReferenced ? "已引用" : "引用"}</i>
+                  </button>;
+                })}
+                </div>}
+              </div>)}
+              {!assets.length && <p className="empty-shot-assets">当前项目还没有可用资产。</p>}
             </div>
-            {shotSidepanel === "shot-asset-overview" && (
-              <div className="asset-panel active">
-                <h3>参考帧 <button onClick={() => setShotSidepanel("shot-frame")}>查看</button></h3>
-                <div className="frame-card" onClick={() => setShotSidepanel("shot-frame")}><div className="frame-card-grid"><span></span><span></span><span></span><span></span></div><b>已选 4 帧</b><span>用于控制构图与站位</span></div>
-                <h3>角色 <button>+</button></h3>
-                {selectedStoryboardAssets.filter((asset) => asset.asset_type === "角色").map((asset) => {
-                  const thumbUrl = selectedAssetImageUrl(asset) || originalAssetImageUrl(asset);
-                  return <div className="ref-card shot-asset-card" key={asset.id}>{thumbUrl ? <img src={thumbUrl} alt={assetDisplayName(asset)} onClick={() => openImage(thumbUrl, assetDisplayName(asset))} /> : <div className="mini-img face-b"></div>}<b>{assetDisplayName(asset)}</b></div>;
-                })}
-                {!selectedStoryboardAssets.some((asset) => asset.asset_type === "角色") && <p className="empty-shot-assets">当前分镜未匹配角色资产</p>}
-                <h3>场景 <button>+</button></h3>
-                {selectedStoryboardAssets.filter((asset) => asset.asset_type === "场景").map((asset) => {
-                  const thumbUrl = selectedAssetImageUrl(asset) || originalAssetImageUrl(asset);
-                  return <div className="scene-card shot-asset-card" key={asset.id}>{thumbUrl ? <img src={thumbUrl} alt={assetDisplayName(asset)} onClick={() => openImage(thumbUrl, assetDisplayName(asset))} /> : <div className="scene-shot"></div>}<b>{assetDisplayName(asset)}</b></div>;
-                })}
-                {!selectedStoryboardAssets.some((asset) => asset.asset_type === "场景") && <p className="empty-shot-assets">当前分镜未匹配场景资产</p>}
-                <h3>道具 <button>+</button></h3>
-                {selectedStoryboardAssets.filter((asset) => asset.asset_type === "道具").map((asset) => {
-                  const thumbUrl = selectedAssetImageUrl(asset) || originalAssetImageUrl(asset);
-                  return <div className="ref-card shot-asset-card" key={asset.id}>{thumbUrl ? <img src={thumbUrl} alt={assetDisplayName(asset)} onClick={() => openImage(thumbUrl, assetDisplayName(asset))} /> : <div className="mini-img prop"></div>}<b>{assetDisplayName(asset)}</b></div>;
-                })}
-                {!selectedStoryboardAssets.some((asset) => asset.asset_type === "道具") && <p className="empty-shot-assets">当前分镜未匹配道具资产</p>}
-              </div>
-            )}
-            {shotSidepanel === "shot-frame" && (
-              <div className="asset-panel frame-side-panel active">
-                <h3>选择原视频帧 <button onClick={() => setShotSidepanel("shot-asset-overview")}>返回</button></h3>
-                <div className="side-frame-picker"><div className="active"></div><div></div><div></div><div></div></div>
-                <h3>合成参考帧</h3>
-                <div className="side-composite"><span></span><span></span><span></span><span></span></div>
-                <p>选中的关键帧用于控制构图、人物站位和画面细节。</p>
-                <button className="dark-btn full">添加为参考帧</button>
-                <button className="primary full">26</button>
-              </div>
-            )}
           </section>
           <section className="shot-main">
-            <div className="shot-head"><h2>{selectedStoryboard ? selectedStoryboard.title : "暂无分镜"} <span>{selectedStoryboard?.time_range ?? "等待自动切分"}</span></h2><div className="shot-actions"><button className="primary small" disabled={busy || !selectedStoryboard} onClick={() => runVideoGeneration(false)}>生成视频</button></div></div>
+            <div className="shot-head"><h2>{selectedStoryboard ? selectedStoryboard.title : "暂无分镜"} <span>{selectedStoryboard?.time_range ?? "等待自动切分"}</span></h2><div className="shot-actions"><button className="ghost small" onClick={() => setAssetSidebarCollapsed((value) => !value)}>{assetSidebarCollapsed ? "显示资产库" : "收起资产库"}</button><button className="ghost small" onClick={() => setPreviewPanelCollapsed((value) => !value)}>{previewPanelCollapsed ? "显示预览" : "收起预览"}</button><button className="ghost small" disabled={!selectedStoryboard} onClick={() => selectedStoryboard && renameStoryboard(selectedStoryboard)}>编辑</button><button className="ghost small" disabled={!selectedStoryboard} onClick={() => selectedStoryboard && createStoryboard(selectedStoryboard)}>复制</button><button className="primary small" disabled={busy || !selectedStoryboard} onClick={runVideoGeneration}>生成模拟任务</button></div></div>
             {segmentPanel === "shot-prompt" && !selectedStoryboard && (
-              <div className="shot-empty sub-panel active">
-                <b>当前项目还没有分镜</b>
-                <span>点击“进入分镜”后系统会根据资产出现片段自动生成；生成完成后这里会显示可编辑提示词。</span>
-              </div>
+              storyboardLoading ? (
+                <div className="shot-empty sub-panel active">
+                  <div className="loader-ring"></div>
+                  <b>正在生成分镜</b>
+                  <span>系统正在调用 Agent 解析视频并生成分镜提示词，请稍候...</span>
+                </div>
+              ) : (
+                <div className="shot-empty sub-panel active">
+                  <b>当前项目还没有分镜</b>
+                  <span>点击"进入分镜"后系统会根据资产出现片段自动生成；生成完成后这里会显示可编辑提示词。</span>
+                </div>
+              )
             )}
             {segmentPanel === "shot-prompt" && selectedStoryboard && (
               <div className="shot-text sub-panel active">
                 <div className="prompt-body">
-                  <div className="tool-row"><button>+</button><button onClick={() => setSegmentPanel("shot-assets")}>引用</button><span>系统已把审核通过的资产引用写入提示词，用户可直接编辑。</span></div>
+                  <div className="tool-row"><button onClick={() => setSegmentPanel("shot-assets")}>引用</button><button onClick={() => setEditingStoryboardBody((value) => !value)}>{editingStoryboardBody ? "完成编辑" : "编辑正文"}</button><span>保存后正文与原始反解文本分开保留。</span></div>
+                  <div className="storyboard-ref-chips">{selectedStoryboardAssets.map((asset) => <button key={asset.id} title="点击移除该引用" onClick={() => toggleStoryboardAsset(asset)}>{assetDisplayName(asset)} <span>×</span></button>)}{!selectedStoryboardAssets.length && <span>当前分镜尚未关联资产；可从左侧资产库添加。</span>}</div>
                   <div className="prompt-editor-wrap">
-                    <textarea ref={promptInputRef} value={selectedStoryboardPrompt} onChange={handlePromptInput} onBlur={(event) => selectedStoryboard && savePrompt(selectedStoryboard, event.currentTarget.value)} />
+                    {editingStoryboardBody
+                      ? <textarea ref={promptInputRef} value={selectedStoryboardPrompt} onChange={handlePromptInput} onBlur={(event) => selectedStoryboard && savePrompt(selectedStoryboard, event.currentTarget.value)} />
+                      : <div className="storyboard-body-view">{selectedStoryboardPrompt}</div>}
                     {mentionQuery !== null && (
                       <div className="mention-menu">
                         <b>引用资产</b>
@@ -1457,59 +1852,32 @@ export function App() {
                     )}
                   </div>
                 </div>
-                <div className="controls"><button>Doubao-Seedance</button><button>8s</button><button>1x</button></div>
+                <div className="generation-mode-note">视频生成当前为模拟任务，尚未生成可播放视频。</div>
               </div>
             )}
             {segmentPanel === "shot-assets" && <div className="sub-panel simple-panel active">{selectedStoryboardAssets.map((asset) => <span className="chip" key={asset.id}>{assetDisplayVariable(asset)}</span>)}<button className="ghost full" onClick={() => setSegmentPanel("shot-prompt")}>返回提示词</button></div>}
-            {segmentPanel === "shot-history" && <div className="sub-panel simple-panel active">{generations.slice(0, 5).map((item, index) => <div className="log-row" key={item.id}><b>第 {index + 1} 次</b><span>{item.status}</span></div>)}<button className="ghost full" onClick={() => setSegmentPanel("shot-prompt")}>返回提示词</button></div>}
-            {segmentPanel === "shot-batch" && <div className="sub-panel simple-panel active"><button className="primary" onClick={() => runVideoGeneration(true)}>生成当前集</button><button className="ghost" onClick={() => runVideoGeneration(true)}>生成选中分镜</button><button className="ghost" onClick={() => setSegmentPanel("shot-prompt")}>返回提示词</button></div>}
+            {segmentPanel === "shot-history" && <div className="sub-panel simple-panel active">{generations.slice(0, 5).map((item, index) => <div className="log-row" key={item.id}><b>第 {index + 1} 条</b><span>{mockGenerationLabel(item.status)}</span></div>)}<button className="ghost full" onClick={() => setSegmentPanel("shot-prompt")}>返回提示词</button></div>}
           </section>
-          <aside className="video-preview">
-            <div className="preview-tabs"><button className={segmentPanel === "shot-prompt" ? "active" : ""} onClick={() => setSegmentPanel("shot-prompt")}>分镜生成</button><button>原视频</button></div>
-            <div className="phone-video"><div className="video-tools"><button title="提取关键帧" onClick={() => setModal("keyframe-modal")}>▣</button><button title="放大查看" onClick={() => setModal("video-zoom-modal")}>⛶</button></div><div className="play">▶</div></div>
-            <div className="preview-history"><div className="history-head"><b>生成记录</b><span>{generations[0]?.status ?? "未生成"}</span></div><div className="history-thumbs"><button className="history-thumb active" onClick={() => setSegmentPanel("shot-history")}><span>1</span></button><button className="history-thumb" onClick={() => setSegmentPanel("shot-history")}><span>2</span></button><button className="history-thumb" onClick={() => setSegmentPanel("shot-history")}><span>3</span></button></div></div>
+          <aside className={`video-preview${previewPanelCollapsed ? " folded" : ""}`}>
+            <div className="preview-tabs"><button className={segmentPanel === "shot-prompt" ? "active" : ""} onClick={() => setSegmentPanel("shot-prompt")}>分镜生成</button><button className={segmentPanel === "shot-history" ? "active" : ""} onClick={() => setSegmentPanel("shot-history")}>任务记录</button></div>
+            {selectedEpisode?.file_url ? <div className="storyboard-source-preview"><div className="source-preview-label">原片参考 · {selectedEpisode.filename}</div><video key={`${selectedEpisode.id}-${selectedStoryboard?.id ?? "none"}`} src={apiAssetUrl(selectedEpisode.file_url)} controls playsInline onLoadedMetadata={(event) => { const range = selectedStoryboard ? parseRange(selectedStoryboard.time_range) : null; const video = event.currentTarget; if (range && Number.isFinite(range.start) && range.start < video.duration) video.currentTime = range.start; }} onError={() => setMessage("原片暂时无法播放，请检查该集视频文件")}/><span>{selectedStoryboard ? `定位时间：${selectedStoryboard.time_range}` : "选择分镜后定位到对应原片时间"}</span></div> : <div className="video-not-ready">当前集没有可播放原片。</div>}
+            <div className="video-not-ready compact-note">生成结果尚未产生真实视频；模拟任务不会显示为可播放结果。</div>
           </aside>
           <section className="shot-strip">
-            <div className="strip-head"><h3>{storyboards.length} 分镜 · 自动切分，可自由增删改查</h3><button className="primary small" onClick={() => setSegmentPanel("shot-batch")}>批量生成</button></div>
+            <div className="strip-head"><h3>{storyboards.length} 分镜 · 自动切分，可自由增删改查</h3><div className="strip-actions"><button className="ghost small" disabled={!selectedStoryboard} onClick={() => selectedStoryboard && moveStoryboard(selectedStoryboard, "up")}>上移</button><button className="ghost small" disabled={!selectedStoryboard} onClick={() => selectedStoryboard && moveStoryboard(selectedStoryboard, "down")}>下移</button><button className="ghost small" disabled={!selectedStoryboard} onClick={() => selectedStoryboard && deleteStoryboard(selectedStoryboard)}>删除</button></div></div>
             <div className="thumb-row">
               {storyboards.map((storyboard) => (
-                <div className="shot-thumb-wrap" key={storyboard.id}><div className={storyboard.id === selectedStoryboard?.id ? "shot-thumb active" : "shot-thumb"} onClick={() => setSelectedStoryboardId(storyboard.id)}><span>{storyboard.title} · {storyboard.time_range}</span></div><button className="insert-shot" aria-label={`在${storyboard.title}后新增`}>+</button></div>
+                <div className="shot-thumb-wrap" key={storyboard.id}><div className={storyboard.id === selectedStoryboard?.id ? "shot-thumb active" : "shot-thumb"} onClick={() => setSelectedStoryboardId(storyboard.id)}><span>{storyboard.title} · {storyboard.time_range}</span><small>{storyboard.status}</small></div><button className="insert-shot" aria-label={`在${storyboard.title}后新增`} onClick={() => createStoryboard(storyboard)}>+</button></div>
               ))}
+              <button className="add-shot-card" onClick={() => createStoryboard()}>+ 新增分镜</button>
             </div>
           </section>
         </section>
 
         <section className={screen === "compare" ? "screen active video-page" : "screen video-page"} id="compare">
-          <aside className="episode-rail"><span>集数</span>{episodes.slice(0, 8).map((episode) => <button className={episode.id === selectedEpisodeId ? "active" : ""} key={episode.id} onClick={() => setSelectedEpisodeId(episode.id)}>{episode.episode_index}</button>)}</aside>
-          <div className="video-toolbar">
-            <label className="timeline-toggle"><input type="checkbox" defaultChecked /> 成片时间线对齐</label>
-            <div className="module-tabs compact-tabs">
-              <button className={videoPanel === "video-compare" ? "active" : ""} onClick={() => setVideoPanel("video-compare")}>对比播放</button>
-              <button className={videoPanel === "video-list" ? "active" : ""} onClick={() => setVideoPanel("video-list")}>片段列表</button>
-              <button className={videoPanel === "video-export" ? "active" : ""} onClick={() => setVideoPanel("video-export")}>导出</button>
-            </div>
-          </div>
-          {videoPanel === "video-compare" && <div className="video-compare sub-panel active"><div className="player-card"><div className="player-label">原片成片</div><div className="vertical-video"></div><div className="player-controls">00:03 / --:--　已对齐播放</div></div><div className="player-card"><div className="player-label new">重制成片</div><div className="vertical-video remake"></div><div className="player-controls">{generations[0]?.status ?? "未生成"}</div></div></div>}
-          {videoPanel === "video-list" && <div className="sub-panel video-list-panel active"><div className="list-summary"><b>{generations.length ? "已有生成片段" : "当前完整成片不可导出"}</b><span>还有 {Math.max(storyboards.length - generations.length, 0)} 个分镜缺少当前采用版本</span></div>{storyboards.map((item) => <div className="video-seg" key={item.id}><b>{item.title}</b><span>{generations.some((gen) => gen.storyboard_id === item.id) ? "已生成 · 可单独导出" : "未生成 · 不参与完整成片"}</span></div>)}</div>}
-          {videoPanel === "video-export" && <div className="sub-panel simple-panel active"><button className="primary">导出完整成片</button><button className="ghost">导出选中视频片段</button><button className="ghost">导出当前片段</button><p className="export-note">完整成片要求所有分镜都有当前采用版本；片段导出仅导出已生成视频。</p></div>}
-          <div className="video-timeline"><div className="time-ruler">原片侧只播放完整成片；新生成侧可查看重制成片或单独片段。时间线对齐仅在成片对比成片时可用。</div><div className="clip-row">{storyboards.slice(0, 8).map((storyboard, index) => <div className={index === 0 ? "clip active" : generations.some((gen) => gen.storyboard_id === storyboard.id) ? "clip" : "clip missing"} key={storyboard.id}>{storyboard.title}</div>)}</div></div>
+          <VideoComposition projectId={currentProject?.id} episodeId={selectedEpisodeId ?? undefined} episodeIndex={selectedEpisode?.episode_index} onMessage={setMessage} />
         </section>
       </main>
-
-      {modal === "backend-project-modal" && (
-        <div className="modal-overlay open" aria-hidden="false" onClick={(event) => event.currentTarget === event.target && setModal(null)}>
-          <section className="backend-dialog" role="dialog" aria-modal="true">
-            <div className="modal-titlebar light"><h3>选择后台视频项目</h3><button onClick={() => setModal(null)}>×</button></div>
-            <div className="backend-search"><input defaultValue="六年后再遇首富前男友" aria-label="搜索项目名或剧 ID" /><button className="ghost">搜索</button></div>
-            <div className="backend-tabs"><button className="active">全部</button><button>AI 剧</button><button>真人剧</button></div>
-            <div className="backend-projects">
-              <article className={backendType === "ai" ? "backend-project active ai" : "backend-project ai"} onClick={() => setBackendType("ai")}><i>AI 剧</i><b>六年后再遇首富前男友</b><span>剧 ID：DRM-20260629-0916</span><small>40 集 · AIGC 短剧生产平台 · 出海短剧组</small><p>可关联制作过程中的角色、场景原资产图和原资产描述。</p></article>
-              <article className={backendType === "live" ? "backend-project active live" : "backend-project live"} onClick={() => setBackendType("live")}><i>真人剧</i><b>六年后再遇首富前男友-真人投放版</b><span>剧 ID：DRM-20260621-0448</span><small>40 集 · 视频管理系统 · 投放素材组</small><p>无 AIGC 资产可复用，将通过视频抽帧和视觉理解普通分析。</p></article>
-            </div>
-            <div className="backend-actions"><button className="primary" onClick={confirmBackendProject}>选择项目</button><button className="ghost" onClick={() => setModal(null)}>取消</button></div>
-          </section>
-        </div>
-      )}
 
       {modal === "upload-confirm-modal" && (
         <div className="modal-overlay open" aria-hidden="false" onClick={(event) => event.currentTarget === event.target && setModal(null)}>
@@ -1518,30 +1886,17 @@ export function App() {
             <div className="confirm-body">
               <div className="confirm-copy"><b>请确认本项目的重制目标和生成参数</b><span>确认后将进入原片上传进度页，上传完成后再选择分析方式。</span></div>
               <div className="confirm-grid">
-                <article><span>视频来源</span><b>{selectedSource?.kind === "backend" ? "后台项目" : "本地视频"}</b></article>
+                <article><span>视频来源</span><b>本地视频</b></article>
                 <article><span>项目名称</span><b>{selectedSource?.title ?? currentProject?.title ?? "未选择项目"}</b></article>
                 <article><span>剧集数量</span><b>{selectedSource?.uploadMode === "single" ? "1 集" : `${selectedFiles?.length || sourceEpisodeCount} 集`}</b></article>
-                <article><span>目标国家</span><b>{targetCountry}</b></article>
+                <article><span>画面类型</span><b>{displayStyleType}</b></article>
+                <article><span>地区语言</span><b>{targetLanguage === "沿用原片语言" ? "国内（原片语言）" : `海外·${targetLanguage}`}</b></article>
                 <article><span>画幅</span><b>{frameRatio}</b></article>
                 <article><span>清晰度</span><b>{resolution}</b></article>
-                <article><span>风格类型</span><b>{styleType}</b></article>
-                <article><span>模型偏好</span><b>{canUseAigc ? "AIGC 资产优先复用 + 默认视频生成模型" : "默认视频生成模型"}</b></article>
               </div>
             </div>
             <div className="confirm-actions"><button className="ghost" onClick={() => setModal(null)}>返回修改</button><button className="primary" onClick={() => uploadEpisodes()}>确认并开始上传</button></div>
           </section>
-        </div>
-      )}
-
-      {modal === "keyframe-modal" && (
-        <div className="modal-overlay open" aria-hidden="false" onClick={(event) => event.currentTarget === event.target && setModal(null)}>
-          <section className="keyframe-dialog" role="dialog" aria-modal="true"><div className="modal-titlebar"><h3>视频截帧</h3><button onClick={() => setModal(null)}>×</button></div><div className="keyframe-player"><div className="keyframe-video"></div><div className="keyframe-controls"><button>◀</button><button className="round-play">▶</button><button>▶</button></div></div><div className="frame-timeline"><div className="time-labels">{Array.from({ length: 15 }).map((_, index) => <span key={index}>00:{String(index).padStart(2, "0")}</span>)}</div><div className="timeline-ticks"></div><div className="timeline-frames">{Array.from({ length: 15 }).map((_, index) => <span key={index}></span>)}</div></div><button className="capture-btn">▣</button></section>
-        </div>
-      )}
-
-      {modal === "video-zoom-modal" && (
-        <div className="modal-overlay open" aria-hidden="false" onClick={(event) => event.currentTarget === event.target && setModal(null)}>
-          <section className="zoom-dialog" role="dialog" aria-modal="true"><div className="modal-titlebar"><h3>放大查看</h3><button onClick={() => setModal(null)}>×</button></div><div className="zoom-video"><div className="play">▶</div></div></section>
         </div>
       )}
 

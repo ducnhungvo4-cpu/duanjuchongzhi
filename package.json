@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "python -m http.server 5173 --directory src",
     "prototype": "python -m http.server 5173 --directory src",
-    "backend": "uvicorn backend.app.main:app --reload --port 8001",
+    "backend": "uvicorn backend.app.main:app --reload --port 8003",
     "frontend": "npm --prefix frontend run dev",
     "check:backend": "python -m compileall backend"
   }

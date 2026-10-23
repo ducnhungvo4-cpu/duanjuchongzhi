@@ -294,7 +294,93 @@ class VolcengineModelProvider(BaseModelProvider):
         return self.config.get("volcengine", {}).get("baseUrl") or "https://ark.cn-beijing.volces.com/api/v3"
 
     def _response_timeout(self) -> int:
-        return int(self.config.get("volcengine", {}).get("responseTimeoutSeconds") or 60)
+        base = int(self.config.get("volcengine", {}).get("responseTimeoutSeconds") or 60)
+        extra = int(self.config.get("volcengine", {}).get("agentExtraTimeoutSeconds") or 0)
+        return base + extra
+
+    def chat_completion_stream(
+        self,
+        *,
+        model_name: str,
+        system_prompt: str,
+        user_content: str,
+        temperature: float | None = None,
+        response_format: dict[str, str] | None = None,
+        video_url: str | None = None,
+        video_file_id: str | None = None,
+        video_fps: float | None = None,
+    ):
+        """Yields (event_type: str, data: dict | str) tuples from the SSE stream."""
+        api_key = self._api_key()
+        base_url = self._base_url()
+        if not api_key:
+            raise ProviderError("缺少 ARK_API_KEY 环境变量。")
+        if not base_url:
+            raise ProviderError("缺少 config.volcengine.baseUrl。")
+        if not model_name:
+            raise ProviderError("缺少模型 ID。")
+
+        instructions = system_prompt
+        input_content: list[dict[str, Any]] = []
+        if video_file_id:
+            input_content.append({"type": "input_video", "file_id": video_file_id})
+        elif video_url:
+            video_content: dict[str, Any] = {"type": "input_video", "video_url": video_url}
+            if video_fps is not None:
+                video_content["fps"] = video_fps
+            input_content.append(video_content)
+        input_content.append({"type": "input_text", "text": user_content})
+
+        payload: dict[str, Any] = {
+            "model": model_name,
+            "input": [{"role": "user", "content": input_content}],
+            "stream": True,
+        }
+        max_output_tokens = self._max_output_tokens()
+        if max_output_tokens:
+            payload["max_output_tokens"] = max_output_tokens
+        thinking = self._thinking_config()
+        if thinking:
+            payload["thinking"] = thinking
+        if instructions:
+            payload["instructions"] = instructions
+        if temperature is not None:
+            payload["temperature"] = temperature
+        if response_format is not None:
+            payload["text"] = {"format": response_format}
+
+        request = urllib.request.Request(
+            f"{base_url.rstrip('/')}/responses",
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self._response_timeout()) as resp:
+                for line_bytes in resp:
+                    line = line_bytes.decode("utf-8", errors="replace").strip()
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str == "[DONE]":
+                        yield ("done", "")
+                        return
+                    try:
+                        chunk: dict[str, Any] = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+                    event_type: str = chunk.get("type", "")
+                    yield (event_type, chunk)
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise ProviderError(f"方舟接口 SSE 流请求失败：HTTP {exc.code} {body}") from exc
+        except urllib.error.URLError as exc:
+            raise ProviderError(f"方舟接口 SSE 连接失败：{exc.reason}") from exc
+        except TimeoutError as exc:
+            raise ProviderError(f"方舟接口 SSE 响应超时：超过 {self._response_timeout()} 秒未返回") from exc
 
     def _max_output_tokens(self) -> int:
         return int(self.config.get("volcengine", {}).get("maxOutputTokens") or 8192)

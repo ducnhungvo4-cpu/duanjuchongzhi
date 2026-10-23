@@ -16,8 +16,9 @@
     "imageModel": "doubao-seedream-5-0-260128",
     "videoModel": "",
     "videoGenerationModel": "doubao-seedance-2.0",
-    "responseTimeoutSeconds": 360,
+    "responseTimeoutSeconds": 900,
     "maxOutputTokens": 32768,
+    "agentExtraTimeoutSeconds": 60,
     "imageSize": "2K",
     "imageWatermark": true,
     "thinking": {
