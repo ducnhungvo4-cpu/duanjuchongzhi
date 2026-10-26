@@ -53,8 +53,10 @@ npm run backend
 默认地址：
 
 ```text
-http://localhost:8000
+http://localhost:8003
 ```
+
+当前Cloudflare免费桥接任务 `VideoRemakeWorkshop-Bridge` 会在当前Windows用户登录时启动。如果后端8003已经健康，任务会直接复用；如果没有进程监听8003，任务会用本项目的Python环境启动同一个FastAPI入口并等待健康检查。若8003已被占用但健康检查失败，任务会保留该进程并记录错误，不会强行结束或再启动一个后端。电脑需保持开机、唤醒并联网；查看桥接与后端日志可打开 `%LOCALAPPDATA%\VideoRemakeWorkshop\logs`。也可手动运行 `npm run backend` 启动后端。
 
 启动前端：
 
